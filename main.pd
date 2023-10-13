@@ -1,4 +1,4 @@
-#N canvas 435 408 958 464 12;
+#N canvas 1975 478 958 464 12;
 #N canvas 830 523 958 464 mixer 0;
 #X obj 39 -376 inlet~;
 #X obj 174 -376 inlet~;
@@ -83,7 +83,7 @@
 #X connect 40 0 37 0;
 #X restore 210 66 pd mixer;
 #X f 20;
-#N canvas 578 15 958 687 apc40 1;
+#N canvas 578 15 958 687 apc40 0;
 #X obj 17 449 vsl 28 128 0 127 0 0 empty bs-1 1 12 -9 0 10 -262144
 -1 -1 12700 1;
 #X obj 47 449 vsl 28 128 0 127 0 0 empty bs-2 2 12 -9 0 10 -262144
@@ -164,7 +164,7 @@
 127 1;
 #X obj 18 301 hradio 30 1 0 9 empty track Track_Selection 0 -8 0 10
 -262144 -4034 -1 8;
-#N canvas -7 516 1918 464 left-buttons 1;
+#N canvas -7 516 1918 464 left-buttons 0;
 #X obj 19 10 notein;
 #X floatatom 19 47 4 0 0 0 - - -;
 #X floatatom 100 47 4 0 0 0 - - -;
@@ -1122,7 +1122,7 @@
 #X obj 364 390 r k21;
 #X obj 414 390 r k22;
 #X obj 464 390 r k23;
-#N canvas 520 62 958 464 init 1;
+#N canvas 520 62 958 464 init 0;
 #X msg 45 69 127;
 #X obj 94 79 s b-8;
 #X msg 253 69 64;
@@ -1636,38 +1636,32 @@
 #X obj 102 7 bng 15 250 50 0 minus empty - 5 7 0 10 -262144 -4034 -1
 ;
 #X obj 162 7 bng 15 250 50 0 plus empty + 5 7 0 10 -262144 -1 -1;
-#N canvas 1193 165 691 300 debug 0;
-#X obj 93 11 r phrase;
-#X obj 93 35 print phrase;
-#X obj 186 35 print play;
-#X obj 266 11 r rec;
-#X obj 266 35 print rec;
-#X obj 339 11 r stop;
-#X obj 339 35 print stop;
-#X obj 8 66 r bs-10;
-#X obj 95 66 r bars;
-#X obj 95 90 print bars;
-#X obj 186 11 r play;
-#X obj 176 66 r play-state;
-#X obj 276 66 r rec-state;
-#X obj 176 113 print playing;
-#X obj 276 113 print recording;
-#X obj 8 11 r patch;
-#X obj 8 35 print patch;
-#X obj 8 90 print x:a/b;
-#X obj 176 90 change 0;
-#X obj 276 90 change 0;
+#N canvas -7 0 958 464 debug 1;
+#X obj 284 11 r phrase;
+#X obj 284 35 _log phrase;
+#X obj 79 11 r rec;
+#X obj 79 35 _log rec;
+#X obj 142 11 r stop;
+#X obj 142 35 _log stop;
+#X obj 213 10 r bars;
+#X obj 213 35 _log bars;
+#X obj 9 11 r play;
+#X obj 9 65 r play-state;
+#X obj 101 65 r rec-state;
+#X obj 9 112 _log playing;
+#X obj 101 112 _log recording;
+#X obj 9 89 change 0;
+#X obj 101 89 change 0;
+#X obj 9 35 _log play;
 #X connect 0 0 1 0;
-#X connect 3 0 4 0;
-#X connect 5 0 6 0;
-#X connect 7 0 17 0;
-#X connect 8 0 9 0;
-#X connect 10 0 2 0;
-#X connect 11 0 18 0;
-#X connect 12 0 19 0;
-#X connect 15 0 16 0;
-#X connect 18 0 13 0;
-#X connect 19 0 14 0;
+#X connect 2 0 3 0;
+#X connect 4 0 5 0;
+#X connect 6 0 7 0;
+#X connect 8 0 15 0;
+#X connect 9 0 13 0;
+#X connect 10 0 14 0;
+#X connect 13 0 11 0;
+#X connect 14 0 12 0;
 #X restore 34 49 pd debug;
 #N canvas 515 231 800 374 effects 0;
 #X obj 10 -386 inlet~;

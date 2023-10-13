@@ -275,7 +275,7 @@ class MidiBridge:
 if __name__ == "__main__":
     try:
         logging.info(
-            "Starting MidiBridge between %s and %s on %s",
+            "Starting MidiBridge: %s <--> %s via %s",
             SYNTH_DEVICE_NAME,
             CONTROL_DEVICE_NAME,
             MIDO_BACKEND,
