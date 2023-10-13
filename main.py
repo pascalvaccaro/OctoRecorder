@@ -225,11 +225,10 @@ class MidiBridge:
         if data[3] == 0:
             self.patch = int("0x" + "".join(map(lambda a: hex(a)[2:], data[5:9])), 16)
             return
-        control = clip((data[3] + 155) / 11 + (4 if data[4] >= 12 else 0))
-        # channel = 8 if data[4] == 2 else data[4] % 6
-        values = map(lambda d: clip(d / 100 * 127), data[5:-2])
-        for index, value in enumerate(values):
-            channel = divmod(index, 6)[1] if data[4] != 2 else 8
+        for i, d in enumerate(data[5:-1]):
+            channel = divmod(i, 6)[1] if data[4] != 2 else 8
+            control = clip((data[3] + 155) / 11 + (4 if i >= 6 else 0))
+            value = clip(d / 100 * 127)
             msg = mido.Message(
                 "control_change", channel=channel, control=control, value=value
             )
