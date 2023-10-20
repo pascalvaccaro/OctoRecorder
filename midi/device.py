@@ -2,11 +2,15 @@ import os
 import time
 import logging
 import mido
-from typing import Callable, Tuple, Union, MutableSet, overload
-from reactivex import operators as ops, merge, from_iterable, of, timer
-from reactivex.abc import DisposableBase
-from reactivex.observable import GroupedObservable, Observable
-from reactivex.scheduler import TimeoutScheduler, CurrentThreadScheduler
+from typing import Callable, Tuple, Union, overload
+from reactivex import (
+    Observable,
+    from_iterable,
+    operators as ops,
+    scheduler as sch,
+)
+from reactivex.subject import BehaviorSubject
+
 from midi import Metronome, InternalMessage
 from utils import doubleclick
 
@@ -16,7 +20,7 @@ logging.info("Midi Backend started on %s", MIDO_BACKEND)
 (logging.debug("Found device %s", d) for d in mido.get_ioport_names())  # type: ignore
 
 
-def connect(port: str, timeout=3) -> Tuple[mido.ports.BaseInput, mido.ports.BaseOutput]:
+def connect(port: str, timeout=3) -> Tuple[mido.ports.BaseInput, mido.ports.BaseOutput,]:
     try:
         return mido.open_input(port), mido.open_output(port)  # type: ignore
     except SystemError:
@@ -24,17 +28,18 @@ def connect(port: str, timeout=3) -> Tuple[mido.ports.BaseInput, mido.ports.Base
         return connect(port, timeout)
 
 
-ct_scheduler = CurrentThreadScheduler()
-ts_scheduler = TimeoutScheduler()
+timeout_scheduler = sch.TimeoutScheduler()
 
 
 class MidiDevice(Metronome):
+    _suspend = None
+
     def __init__(self, port, external=None):
-        super(MidiDevice, self).__init__(InternalMessage("init", 0))
+        super(MidiDevice, self).__init__()
         self.name = port[0:8]
         self.inport, self.outport = connect(port)
+        self.bridge = BehaviorSubject(InternalMessage("init", 0))
         self.channel = 0
-        self.subs: MutableSet[DisposableBase] = set()
         if isinstance(external, MidiDevice):
             self.external = external
         logging.info("[MID] %s connected via %s", self.name, MIDO_BACKEND)
@@ -44,44 +49,70 @@ class MidiDevice(Metronome):
             self.inport.close()
         if self.outport is not None and not self.outport.closed:
             self.outport.close()
-        for sub in self.subs:
-            sub.dispose()
 
-    def start(self):
-        select_clock = lambda msg: msg.type == "clock"
-        clock, messages = from_iterable(self.inport.__iter__()).pipe(
-            ops.do_action(self.debug), ops.partition(select_clock)
+    @property
+    def suspend(self):
+        return self._suspend
+
+    @suspend.setter
+    def suspend(self, value: Union[Callable, None]):
+        self._suspend = value
+
+    @property
+    def to_action(self):
+        def wrapped(msg):
+            action = getattr(self, "_" + msg.type + "_in")
+            if self.suspend is not None:
+                if self.suspend(msg):
+                    self.suspend = None
+                yield
+            elif action is not None:
+                yield from action(msg)
+
+        return wrapped
+
+    @property
+    def messages(self):
+        logging.info("[MID] Listening to messages from %s", self.name)
+        return from_iterable(self.inport, scheduler=sch.NewThreadScheduler()).pipe(
+            ops.filter(self.select_messages),
+            ops.do_action(self.debug),
+            ops.flat_map(self.to_action),
+            ops.filter(bool),
         )
-        clock = clock.pipe(ops.map(self._clock_in), ops.observe_on(ct_scheduler))
 
-        is_cc = lambda m: m.is_cc()
-        cc, rest = messages.pipe(ops.partition(is_cc))
+    @overload
+    def on(self, event: str, cb: Callable) -> None:
+        ...
 
-        gate = lambda msg: msg.is_cc() and msg.control == 23
-        last = (
-            lambda src: lambda msg: msg.is_cc()
-            and msg.control == src.control - 1
-            and msg.channel == src.channel
+    @overload
+    def on(self, event: str) -> Observable[Tuple[int, ...]]:
+        ...
+
+    def on(self, event: str, cb=None) -> Union[None, Observable[Tuple[int, ...]]]:
+        obs = self.bridge.pipe(
+            ops.filter(lambda ev: event in ev.command),
+            ops.map(lambda ev: ev.values),
         )
-        gate_control = lambda m: cc.pipe(ops.filter(last(m))) if gate(m) else of(m)
-        throttle_control = lambda obs: obs.pipe(
-            ops.throttle_with_mapper(gate_control),
-            ops.throttle_first(0.25),
-        )
-        channel_key = lambda msg: msg.channel
-        controls = cc.pipe(ops.group_by(channel_key), ops.map(throttle_control))
+        return obs if cb is None else self.subs.add(obs.subscribe(cb))
 
-        to_action = lambda msg: getattr(self, "_" + msg.type + "_in")(msg)
-        all = merge(controls, rest).pipe(
-            ops.flat_map(to_action), ops.observe_on(ts_scheduler)
+    def sync(self, event: str, sync: str, cb: Callable):
+        self.subs.add(
+            self.on(event)
+            .pipe(ops.buffer(self.on(sync)), ops.filter(lambda b: len(b) > 0))
+            .subscribe(cb)
         )
-
-        self.subs.add(merge(clock, all).pipe(ops.filter(bool)).subscribe(self.send))
 
     def send(self, msg):
         try:
             if isinstance(msg, InternalMessage):
-                self.on_next(msg)
+                logging.debug(
+                    "[OUT] %s message from %s: %s",
+                    msg.command.capitalize(),
+                    self.name,
+                    msg.values,
+                )
+                self.bridge.on_next(msg)
             elif isinstance(msg, mido.messages.Message):
                 if (
                     self.outport is None
@@ -103,10 +134,6 @@ class MidiDevice(Metronome):
                     self.outport.send(msg)
         except Exception as e:
             logging.error("[OUT] %s %s", self.name, e)
-            logging.debug("Stacktrace %s", e.with_traceback(None))
-
-    def receive(self, _):
-        return NotImplemented
 
     def debug(self, msg):
         if msg.type != "clock":
@@ -117,32 +144,10 @@ class MidiDevice(Metronome):
                 msg.dict(),
             )
 
-    @overload
-    def on(self, event: str, cb: Callable) -> DisposableBase:
-        ...
-
-    @overload
-    def on(self, event: str) -> Observable[Tuple[int, ...]]:
-        ...
-
-    def on(
-        self, event: str, cb=None
-    ) -> Union[DisposableBase, Observable[Tuple[int, ...]]]:
-        obs = self.pipe(
-            ops.as_observable(),
-            ops.filter(lambda ev: ev.command.find(event) >= 0),
-            ops.map(lambda ev: ev.values),
-        )
-        if cb is None:
-            return obs
-        sub = obs.subscribe(cb)
-        self.subs.add(sub)
-        return sub
-
-    def sync(self, event: str, obs: Observable, cb: Callable):
-        self.subs.add(self.on(event).pipe(ops.buffer(obs)).subscribe(cb))
-
     @doubleclick(0.4)
     def shutdown(self):
-        logging.debug("[IN] Shutdown signal")
         os.system("sudo shutdown now")
+
+    @property
+    def select_messages(self):
+        return NotImplemented

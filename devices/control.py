@@ -1,8 +1,25 @@
-from reactivex import merge, interval, of, concat, timer, operators as ops
+import reactivex.operators as ops
+import reactivex.scheduler as sch
+from reactivex import merge, interval, of, concat, timer, from_iterable
 from midi import MidiNote, MidiCC, MidiDevice, InternalMessage as Msg
+from utils import throttle
 
 
 class APC40(MidiDevice):
+    scheduler = sch.TimeoutScheduler()
+
+    @property
+    def select_messages(self):
+        def wrapped(msg):
+            print(msg.type)
+            return msg.type in [
+                "control_change",
+                "note_on",
+                "note_off",
+            ]
+
+        return wrapped
+
     def __init__(self, *args, **kwargs):
         super(APC40, self).__init__(*args, **kwargs)
         for ch in range(0, 8):
@@ -15,15 +32,10 @@ class APC40(MidiDevice):
                 self.send(MidiNote(ch, note))
         self.send(MidiCC(0, 14, 127))
         self.send(MidiCC(0, 15, 64))
-        self.set_bars()
+        self.subs.add(
+            concat(from_iterable(self._bars_out()), self.messages).subscribe(self.send)
+        )
 
-    def receive(self, msg):
-        if msg.type == "control_change":
-            self._control_change_in(msg)
-        elif msg.type == "note_on":
-            self._note_on_in(msg)
-    
-    
     def blink(self, note):
         def wrapped(_):
             concat(of(127), timer(0.125)).subscribe(
@@ -32,71 +44,79 @@ class APC40(MidiDevice):
 
         return wrapped
 
-    def set_bars(self, bars=2):
+    def _bars_out(self, bars=2):
         for ch in range(0, bars):
             yield MidiNote(ch, 50)
         for ch in range(bars, 8):
             yield MidiNote(ch, 50, 0)
-        return Msg("bars", bars)
+        yield Msg("bars", bars)
 
+    @throttle(0.250)
     def _control_change_in(self, msg):
         channel = msg.channel
         control = msg.control
         value = msg.value
-        if control == 64:
-            return Msg("toggle", None)
-        if control == 67:
-            return Msg("stop", None)
-        if control == 7:
-            return Msg("volume", channel, value / 127)
-        if control == 14:
+        if control == 23:
+            self.suspend = (
+                lambda msg: msg.is_cc() and msg.channel == 8 and msg.control == 22
+            )
+        elif control == 64:
+            yield Msg("toggle", None)
+        elif control == 67:
+            yield Msg("stop", None)
+        elif control == 7:
+            yield Msg("volume", channel, value / 127)
+        elif control == 14:
             for ch in range(0, 8):
                 yield Msg("volume", ch, value / 127)
-        if control == 15:
-            return Msg("xfader", value / 127)
-        if control >= 48 and control <= 55:
-            return Msg("xfade", control - 48, value / 127)
-        if control == 19:
+        elif control == 15:
+            yield Msg("xfader", value / 127)
+        elif control >= 48 and control <= 55:
+            yield Msg("xfade", control - 48, value / 127)
+        elif control == 19:
             for ctl in [16, 17, 18]:
-                yield self._control_change_in(dict(channel=channel, control=ctl, value=value))
+                yield from self._control_change_in(
+                    dict(channel=channel, control=ctl, value=value)
+                )
                 yield MidiCC(channel, ctl, value)
         elif control >= 16 and control <= 22:
             if channel < 6:
-                return Msg("strings", channel, control, value)
+                yield Msg("strings", channel, control, value)
             elif channel == 8:
                 if control < 23:
                     for ch in range(0, 8):
-                        yield self.send(MidiCC(ch, control, value))
+                        yield MidiCC(ch, control, value)
 
     def _note_on_in(self, msg):
         note = msg.note
         if note == 91:
+            yield Msg("play")
             for ch in range(0, 9):
-                yield self.send(MidiNote(ch, 62))
-            return Msg("play")
-        if note == 92:
+                yield MidiNote(ch, 62)
+        elif note == 92:
+            yield Msg("stop")
             for ch in range(0, 9):
                 yield MidiNote(ch, 62, 0)
-            return Msg("stop")
-        if note == 93:
+        elif note == 93:
             signal = merge(self.on("play"), self.on("stop"))
             interval(0.250).pipe(ops.take_until(signal)).subscribe(self.blink(62))
-            return Msg("rec")
-        if note == 94:  # up
-            return Msg("patch", -1)
-        if note == 95:  # down
-            return Msg("patch", 1)
-        if note == 96:  # right
-            return Msg("patch", 4)
-        if note == 97:  # left
-            return Msg("patch", -4)
-        if note == 100:
-            return Msg("phrase", 1)
-        if note == 101:
-            return Msg("phrase", -1)
-        if note == 98:
-            return self.shutdown()
-        yield self._note_in(msg)
+            yield Msg("rec")
+        elif note == 94:  # up
+            yield Msg("patch", -1)
+        elif note == 95:  # down
+            yield Msg("patch", 1)
+        elif note == 96:  # right
+            yield Msg("patch", 4)
+        elif note == 97:  # left
+            yield Msg("patch", -4)
+        elif note == 100:
+            yield Msg("phrase", 1)
+        elif note == 101:
+            yield Msg("phrase", -1)
+        elif note == 98:
+            yield self.shutdown()
+        else:
+            yield from self._note_in(msg)
 
     def _note_in(self, msg):
         channel = msg.channel
@@ -106,9 +126,8 @@ class APC40(MidiDevice):
             if channel == 7:
                 for ch in range(0, 7):
                     yield MidiNote(ch, note, value)
-            return MidiNote(channel, note, value)
-        if note == 50:
-            return self.set_bars(channel + 1)
+        elif note == 50:
+            yield from self._bars_out(channel + 1)
 
     def _note_off_in(self, msg):
-        yield self._note_in(msg)
+        yield from self._note_in(msg)

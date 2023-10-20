@@ -53,7 +53,8 @@ class MidiCC(mido.messages.Message):
         )
 
 
-class InternalMessage:
+class InternalMessage(object):
     def __init__(self, command: str, *args):
+        super(InternalMessage, self).__init__()
         self.command = command
         self.values = tuple(map(lambda x: int(x), args))

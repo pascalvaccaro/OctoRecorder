@@ -1,40 +1,32 @@
+from reactivex import operators as ops, scheduler as sch
 from midi import MidiCC, SysexCmd, SysexReq, MidiDevice
 from devices import APC40
 from utils import clip, scroll
 
+
 class SY1000(MidiDevice):
+    scheduler = sch.EventLoopScheduler()
+
+    @property
+    def select_messages(self):
+        return lambda msg: msg.type in ["clock", "start", "stop", "program_change"]
+
     def __init__(self, *args, **kwargs):
         super(SY1000, self).__init__(*args, **kwargs)
         self._get_strings()
         self.patch = 0
-
-    def start(self):
-        MidiDevice.start(self)
+        self.subs.add(self.messages.subscribe(self.send))
         if isinstance(self.external, APC40):
-            self.on("beat", self.external.blink(63))
-            self.on("start", self.external.blink(65))
+            self.on("start", self.external.blink(63))
+            self.on("beat", self.external.blink(65))
             self.external.on("bars", self.set_bars)
             self.external.on("patch", self._set_patch)
             self.external.on("strings", self._set_strings)
 
-    def receive(self, msg):
-        if msg.type == "clock":
-            self._clock_in()
-        elif msg.type == "start":
-            self._start_in()
-        elif msg.type == "stop":
-            self._stop_in()
-        elif msg.type == "sysex":
-            self._sysex_in(msg)
-        elif msg.type == "program_change":
-            self._program_change_in(msg)
-
     def _sysex_in(self, msg):
-        if msg.data[0] != 65:
-            return
+        if msg.data[0] != 65 or msg.data[6] != 18:
+            yield
         data = msg.data[6:]
-        if data[0] != 18:
-            return
         if data[3] == 0:
             self.patch = int("0x" + "".join(map(lambda a: hex(a)[2:], data[5:9])), 16)
         else:

@@ -3,7 +3,8 @@ import numpy as np
 import sounddevice as sd
 from audioop import tostereo, tomono
 from midi import MidiDevice
-from utils import split, minmax, scroll
+from utils import split, minmax, scroll, t2i
+
 
 class SoundDevice:
     def __init__(self, device):
@@ -11,6 +12,7 @@ class SoundDevice:
         self.samplerate = device.get("default_samplerate")
         self.max_input_channels = device.get("max_input_channels")
         self.max_output_channels = device.get("max_output_channels")
+
 
 try:
     sy1000 = SoundDevice(sd.query_devices("SY-1000"))
@@ -31,17 +33,74 @@ sd.default.device = sy1000.name
 sd.default.samplerate = sy1000.samplerate
 sd.default.channels = (sy1000.max_input_channels, sy1000.max_output_channels)
 
-class OctoRecorder:
-    playing = False
-    recording = False
-    phrase = 0
-    x = 0.5
 
-    def __init__(self, synth, control):
-        self.tempo = int(synth.tempo)
-        self.bars = int(control.bars)
+class OctoRecorder:
+    _x = 0.5
+    _phrase = 0
+    _bars = 2
+    _playing = False
+    _recording = False
+
+    @property
+    def maxsize(self):
+        # '6' is 4 * 60 seconds / 40 BPM (min tempo sets the largest size)
+        return int(sy1000.samplerate * self.bars * 6)
+
+    @property
+    def playing(self):
+        return self._playing
+
+    @property
+    def recording(self):
+        return self._recording
+
+    @playing.setter
+    def playing(self, value: bool):
+        self._playing = value
+        self._recording = False if value else self._recording
+
+    @recording.setter
+    def recording(self, value: bool):
+        self._recording = value
+        self._playing = False if value else self._playing
+
+    @property
+    def state(self):
+        if self.playing:
+            return "Playing"
+        if self.recording:
+            return "Recording"
+        return "Streaming"
+
+    @property
+    def bars(self):
+        return self._bars
+
+    @bars.setter
+    def bars(self, values):
+        self._bars = t2i(values)
+
+    @property
+    def phrase(self):
+        return self._phrase
+
+    @phrase.setter
+    def phrase(self, values):
+        phrase = self._phrase + t2i(values)
+        self._phrase = scroll(phrase, 0, 15)
+
+    @property
+    def x(self):
+        return self._x
+
+    @x.setter
+    def x(self, values):
+        self._x = minmax(t2i(values))
+
+    def __init__(self, bars=2):
+        self.bars = bars
         self.vsliders = np.ones((1, 8), dtype=np.float32)
-        self.xfaders = np.array(([OctoRecorder.x] * 8), dtype=np.float32)
+        self.xfaders = np.array(([self.x] * 8), dtype=np.float32)
         self.data = np.zeros((16, self.maxsize, 8), dtype=np.float32)
         self.stream = sd.RawStream(callback=self._callback)
         logging.info(
@@ -49,32 +108,29 @@ class OctoRecorder:
             sy1000.name,
             sy1000.samplerate,
         )
-        self._listen(synth, control)
 
-    @property
-    def maxsize(self):
-        # length in seconds = bars * 4 beats * 60 seconds / BPM
-        seconds = self.bars * 240 / self.tempo
-        # samplerate * seconds
-        return int(sy1000.samplerate * seconds)
-
-    def _listen(self, synth: MidiDevice, control: MidiDevice):
+    def bind(self, synth: MidiDevice, control: MidiDevice):
         synth.on("start", self._start)
-        start = synth.on("start")
         for dev in (synth, control):
             dev.on("stop", self._stop)
         for ev in ("play", "rec", "toggle"):
-            control.sync(ev, start, getattr(self, "_" + ev))
+            control.sync(ev, "start", getattr(self, "_" + ev))
         for ev in ("volume", "xfade", "xfader"):
             control.on(ev, getattr(self, "_" + ev))
         for ev in ("phrase", "bars"):
             control.on(ev, getattr(self, "_set_" + ev))
 
+    def _start(self, bars):
+        self.bars = bars
+        self.current_frame = 0
+        self.data.resize(16, self.maxsize, 8)
+        logging.debug("[SD] %s %i chunk of data", self.state, self.maxsize)
+
     def _callback(self, indata, outdata, frames, time, status):
         if status:
             logging.warn(status)
-        if OctoRecorder.playing:
-            phrase = self.data[OctoRecorder.phrase]
+        if self.playing:
+            phrase = self.data[self.phrase]
             chunksize = min(len(phrase) - self.current_frame, frames)
             outdata[:chunksize] = self._transform(
                 phrase[self.current_frame : self.current_frame + chunksize,]
@@ -84,12 +140,12 @@ class OctoRecorder:
                 self.current_frame = 0
             else:
                 self.current_frame += chunksize
-        elif OctoRecorder.recording:
-            phrase = self.data[OctoRecorder.phrase]
+        elif self.recording:
+            phrase = self.data[self.phrase]
             cursor = min(len(phrase), self.current_frame + frames)
             phrase[self.current_frame : cursor] = indata
             if cursor >= len(phrase):
-                self.data[OctoRecorder.phrase, :cursor] = 0
+                phrase[:cursor] = 0
                 self.current_frame = 0
             else:
                 self.current_frame += cursor
@@ -100,35 +156,23 @@ class OctoRecorder:
     def _transform(self, data):
         for i, f in enumerate(self.xfaders):
             s = tostereo(data[:, i], 4, *split(f))
-            data[:, i] = tomono(s, 4, *split(OctoRecorder.x))
+            data[:, i] = tomono(s, 4, *split(self.x))
         return np.multiply(np.array(data, dtype=np.float32), self.vsliders)
 
-    def _start(self, values):
-        self.tempo, self.bars = (int(x) for x in values)
-        self.data.resize(16, self.maxsize, 8)
-        self.current_frame = 0
-        if OctoRecorder.playing:
-            logging.info("[SD] Start playing %i chunk of data", self.maxsize)
-        elif OctoRecorder.recording:
-            logging.info("[SD] Start recording %i chunk of data", self.maxsize)
-        else:
-            logging.info("[SD] Start streaming %i chunk of data", self.maxsize)
-
     def _play(self, _):
-        OctoRecorder.playing = True
-        OctoRecorder.recording = False
+        self.playing = True
 
     def _rec(self, _):
-        OctoRecorder.playing = False
-        OctoRecorder.recording = True
+        self.recording = True
 
     def _stop(self, _):
-        OctoRecorder.playing = False
-        OctoRecorder.recording = False
+        self.playing = False
+        self.recording = False
 
     def _toggle(self, _):
-        OctoRecorder.playing = not OctoRecorder.playing
-        OctoRecorder.recording = not OctoRecorder.recording
+        self.playing = not self.playing
+        if not self.playing:
+            self.recording = True
 
     def _volume(self, values):
         track, value = values
@@ -139,11 +183,10 @@ class OctoRecorder:
         self.xfaders[0][track] = minmax(value)
 
     def _xfader(self, values):
-        OctoRecorder.x = minmax(values[0])
+        self.x = values
 
-    def _set_bars(self, values=[2]):
-        self.bars = values[0]
+    def _set_bars(self, values):
+        self.bars = values
 
     def _set_phrase(self, values):
-        phrase = OctoRecorder.phrase + values[0]
-        OctoRecorder.phrase = scroll(phrase, 0, 15)
+        self.phrase = values
