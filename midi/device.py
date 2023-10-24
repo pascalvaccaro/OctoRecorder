@@ -2,25 +2,27 @@ import os
 import time
 import logging
 import mido
-from typing import Callable, Tuple, Union, overload
-from reactivex import (
-    Observable,
-    from_iterable,
-    operators as ops,
-    scheduler as sch,
-)
+from collections.abc import Iterable
+from typing import Callable, MutableSet, Tuple, Union, overload, List, Any
+import reactivex.operators as ops
+import reactivex.scheduler as sch
+from reactivex import Observable, from_iterable, never, of
+from reactivex.abc import DisposableBase
 from reactivex.subject import BehaviorSubject
+
 
 from midi import Metronome, InternalMessage
 from utils import doubleclick
 
 MIDO_BACKEND = os.environ.get("__MIDO_BACKEND__", "mido.backends.portmidi")
 mido.set_backend(MIDO_BACKEND, load=True)
-logging.info("Midi Backend started on %s", MIDO_BACKEND)
-(logging.debug("Found device %s", d) for d in mido.get_ioport_names())  # type: ignore
+logging.info("[MID] Midi Backend started on %s", MIDO_BACKEND)
+(logging.debug("[MID] Found device %s", d) for d in mido.get_ioport_names())  # type: ignore
 
 
-def connect(port: str, timeout=3) -> Tuple[mido.ports.BaseInput, mido.ports.BaseOutput,]:
+def connect(
+    port: str, timeout=3
+) -> Tuple[mido.ports.BaseInput, mido.ports.BaseOutput,]:
     try:
         return mido.open_input(port), mido.open_output(port)  # type: ignore
     except SystemError:
@@ -28,20 +30,17 @@ def connect(port: str, timeout=3) -> Tuple[mido.ports.BaseInput, mido.ports.Base
         return connect(port, timeout)
 
 
-timeout_scheduler = sch.TimeoutScheduler()
-
-
 class MidiDevice(Metronome):
     _suspend = None
 
-    def __init__(self, port, external=None):
+    def __init__(self, port):
         super(MidiDevice, self).__init__()
         self.name = port[0:8]
         self.inport, self.outport = connect(port)
         self.bridge = BehaviorSubject(InternalMessage("init", 0))
         self.channel = 0
-        if isinstance(external, MidiDevice):
-            self.external = external
+        self.subs: MutableSet[DisposableBase] = set()
+        self.subs.add(self.messages)
         logging.info("[MID] %s connected via %s", self.name, MIDO_BACKEND)
 
     def __del__(self):
@@ -49,105 +48,138 @@ class MidiDevice(Metronome):
             self.inport.close()
         if self.outport is not None and not self.outport.closed:
             self.outport.close()
+        for sub in self.subs:
+            sub.dispose()
 
     @property
     def suspend(self):
         return self._suspend
 
     @suspend.setter
-    def suspend(self, value: Union[Callable, None]):
+    def suspend(self, value: Union[Callable[[Any], bool], None]):
         self._suspend = value
 
     @property
     def to_action(self):
-        def wrapped(msg):
-            action = getattr(self, "_" + msg.type + "_in")
+        event_loop = sch.EventLoopScheduler()
+
+        def wrapped(msg: Union[InternalMessage, None]) -> Observable[InternalMessage]:
+            if msg is None:
+                return never()
             if self.suspend is not None:
                 if self.suspend(msg):
                     self.suspend = None
-                yield
-            elif action is not None:
-                yield from action(msg)
+                return never()
+            action = getattr(self, "_" + msg.type + "_in")
+            source = action(msg) if action is not None else None
+            if isinstance(source, Observable):
+                return source.pipe(ops.observe_on(event_loop))
+            if isinstance(source, Iterable):
+                return from_iterable(source, event_loop)
+            if source is not None:
+                return of(source)
+            return never()
 
         return wrapped
 
     @property
     def messages(self):
         logging.info("[MID] Listening to messages from %s", self.name)
-        return from_iterable(self.inport, scheduler=sch.NewThreadScheduler()).pipe(
-            ops.filter(self.select_messages),
-            ops.do_action(self.debug),
-            ops.flat_map(self.to_action),
-            ops.filter(bool),
+        return (
+            from_iterable(self.inport, sch.EventLoopScheduler())
+            .pipe(
+                ops.filter(self.select_message),
+                ops.do_action(self.debug),
+                ops.flat_map(self.to_action),
+                ops.start_with(*self.init_actions),
+            )
+            .subscribe(self.send)
         )
 
-    @overload
-    def on(self, event: str, cb: Callable) -> None:
-        ...
-
-    @overload
-    def on(self, event: str) -> Observable[Tuple[int, ...]]:
-        ...
-
-    def on(self, event: str, cb=None) -> Union[None, Observable[Tuple[int, ...]]]:
-        obs = self.bridge.pipe(
-            ops.filter(lambda ev: event in ev.command),
-            ops.map(lambda ev: ev.values),
-        )
-        return obs if cb is None else self.subs.add(obs.subscribe(cb))
-
-    def sync(self, event: str, sync: str, cb: Callable):
+    def bind(self, device: "MidiDevice"):
+        event_loop = sch.EventLoopScheduler()
         self.subs.add(
-            self.on(event)
-            .pipe(ops.buffer(self.on(sync)), ops.filter(lambda b: len(b) > 0))
-            .subscribe(cb)
+            device.bridge.pipe(
+                ops.observe_on(event_loop),
+                ops.filter(self.external_message),
+                ops.flat_map(self.to_action),
+            ).subscribe(self.send)
         )
+
+    @overload
+    def on(self, event: Union[str, List[str]], cb: Callable) -> None:
+        ...
+
+    @overload
+    def on(self, event: Union[str, List[str]], cb: Callable, signal: str) -> None:
+        ...
+
+    @overload
+    def on(self, event: Union[str, List[str]]) -> Observable[Tuple[int, ...]]:
+        ...
+
+    def on(
+        self, event: Union[str, List[str]], cb=None, signal=None
+    ) -> Union[None, Observable[Tuple[int, ...]]]:
+        if isinstance(event, list):
+            event = ":".join(event)
+        obs = self.bridge.pipe(
+            ops.filter(lambda ev: ev.type in event),
+            ops.map(lambda ev: ev.data),
+        )
+        if signal:
+            obs = obs.pipe(ops.buffer(self.on(signal)), ops.map(lambda b: b.pop()))
+        return obs if cb is None else self.subs.add(obs.subscribe(cb))
 
     def send(self, msg):
         try:
-            if isinstance(msg, InternalMessage):
-                logging.debug(
-                    "[OUT] %s message from %s: %s",
-                    msg.command.capitalize(),
-                    self.name,
-                    msg.values,
-                )
-                self.bridge.on_next(msg)
-            elif isinstance(msg, mido.messages.Message):
-                if (
-                    self.outport is None
-                    or self.outport.closed
-                    or self.outport.name is None
-                ):
-                    logging.warning(
-                        "[OUT] No device %s, skipping message: %d",
-                        self.name,
-                        msg.dict(),
-                    )
-                else:
-                    logging.debug(
-                        "[OUT] %s message to %s: %s",
-                        msg.type.capitalize(),  # type: ignore
-                        self.name,
-                        msg.dict(),
-                    )
-                    self.outport.send(msg)
+            if isinstance(msg, tuple):
+                msg = msg[0]
+            if msg is not None:
+                log = [msg.type.capitalize(), self.name, msg.dict()]
+                if isinstance(msg, InternalMessage):
+                    log.insert(0, "[SUB] %s message through %s: %s")
+                    self.bridge.on_next(msg)
+                elif isinstance(msg, mido.messages.Message):
+                    if self.outport is None or self.outport.closed:
+                        logging.warning(
+                            "[OUT] No device %s, skipping message: %d",
+                            self.name,
+                            msg.dict(),
+                        )
+                    else:
+                        log.insert(0, "[OUT] %s message to %s: %s")
+                        self.outport.send(msg)
+                if msg.type not in ["beat", "note_on", "note_off"]: # type: ignore
+                    logging.debug(*log)
         except Exception as e:
             logging.error("[OUT] %s %s", self.name, e)
 
-    def debug(self, msg):
-        if msg.type != "clock":
-            logging.debug(
+    @property
+    def debug(self):
+        return (
+            lambda msg: logging.debug(
                 "[IN] %s message from %s: %s",
                 msg.type.capitalize(),
                 self.name,
                 msg.dict(),
             )
+            if msg.type not in ["clock", "beat", "note_on", "note_off"]
+            else None
+        )
 
     @doubleclick(0.4)
     def shutdown(self):
         os.system("sudo shutdown now")
 
     @property
-    def select_messages(self):
+    def init_actions(self):
+        return []
+
+    @property
+    def select_message(self) -> Callable[[Union[InternalMessage, None]], bool]:
+        return NotImplemented
+
+    @property
+    def external_message(self) -> Callable[[Union[InternalMessage, None]], bool]:
         return NotImplemented

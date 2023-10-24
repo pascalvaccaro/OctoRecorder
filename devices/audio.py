@@ -111,14 +111,14 @@ class OctoRecorder:
 
     def bind(self, synth: MidiDevice, control: MidiDevice):
         synth.on("start", self._start)
-        for dev in (synth, control):
-            dev.on("stop", self._stop)
-        for ev in ("play", "rec", "toggle"):
-            control.sync(ev, "start", getattr(self, "_" + ev))
+        synth.on("stop", self._stop)
+        control.on("stop", self._stop)
         for ev in ("volume", "xfade", "xfader"):
             control.on(ev, getattr(self, "_" + ev))
+        for ev in ("play", "rec", "toggle"):
+            control.on(ev, getattr(self, "_" + ev), "start")
         for ev in ("phrase", "bars"):
-            control.on(ev, getattr(self, "_set_" + ev))
+            control.on(ev, getattr(self, "_set_" + ev), "beat")
 
     def _start(self, bars):
         self.bars = bars

@@ -1,64 +1,56 @@
 import reactivex.operators as ops
-import reactivex.scheduler as sch
-from reactivex import merge, interval, of, concat, timer, from_iterable
-from midi import MidiNote, MidiCC, MidiDevice, InternalMessage as Msg
-from utils import throttle
+from reactivex import of, concat, timer, scheduler as sch, merge
+from midi import MidiNote, MidiCC, MidiDevice, InternalMessage as Msg, debounce
 
 
 class APC40(MidiDevice):
-    scheduler = sch.TimeoutScheduler()
+    @property
+    def select_message(self):
+        return lambda msg: msg.type in [
+            "control_change",
+            "note_on",
+            "note_off",
+        ]
 
     @property
-    def select_messages(self):
-        def wrapped(msg):
-            print(msg.type)
-            return msg.type in [
-                "control_change",
-                "note_on",
-                "note_off",
-            ]
-
-        return wrapped
-
-    def __init__(self, *args, **kwargs):
-        super(APC40, self).__init__(*args, **kwargs)
+    def init_actions(self):
         for ch in range(0, 8):
-            self.send(MidiCC(ch, 7, 127))
+            yield MidiCC(ch, 7, 127)
             for ctl in range(16, 20):
-                self.send(MidiCC(ch, ctl, 127))
+                yield MidiCC(ch, ctl, 127)
             for ctl in [*range(20, 24), *range(48, 56)]:
-                self.send(MidiCC(ch, ctl, 64))
+                yield MidiCC(ch, ctl, 64)
             for note in [48, 49]:
-                self.send(MidiNote(ch, note))
-        self.send(MidiCC(0, 14, 127))
-        self.send(MidiCC(0, 15, 64))
-        self.subs.add(
-            concat(from_iterable(self._bars_out()), self.messages).subscribe(self.send)
+                yield MidiNote(ch, note)
+        yield MidiCC(0, 14, 127)
+        yield MidiCC(0, 15, 64)
+        yield from self._note_in(MidiNote(1, 50))
+
+    @property
+    def external_message(self):
+        return lambda msg: msg.type in [
+            "start",
+            "beat",
+            "strings",
+        ]
+
+    def blink(self, note: int):
+        return concat(of(127), timer(0.1)).pipe(
+            ops.map(lambda x: MidiNote(self.channel, note, x)),
+            ops.subscribe_on(sch.TimeoutScheduler()),
         )
 
-    def blink(self, note):
-        def wrapped(_):
-            concat(of(127), timer(0.125)).subscribe(
-                lambda x: self.send(MidiNote(self.channel, note, x))
-            )
-
-        return wrapped
-
-    def _bars_out(self, bars=2):
-        for ch in range(0, bars):
-            yield MidiNote(ch, 50)
-        for ch in range(bars, 8):
-            yield MidiNote(ch, 50, 0)
-        yield Msg("bars", bars)
-
-    @throttle(0.250)
-    def _control_change_in(self, msg):
+    # @debounce(lambda a, b: a.data[0] == b.data[0] and a.data[1] == b.data[1], 24 / 1000)
+    def _control_change_in(self, msg: MidiCC):
         channel = msg.channel
         control = msg.control
         value = msg.value
         if control == 23:
+            self.channel = channel
             self.suspend = (
-                lambda msg: msg.is_cc() and msg.channel == 8 and msg.control == 22
+                lambda msg: isinstance(msg, MidiCC)
+                and msg.channel == channel
+                and msg.control == control - 1
             )
         elif control == 64:
             yield Msg("toggle", None)
@@ -71,14 +63,11 @@ class APC40(MidiDevice):
                 yield Msg("volume", ch, value / 127)
         elif control == 15:
             yield Msg("xfader", value / 127)
-        elif control >= 48 and control <= 55:
-            yield Msg("xfade", control - 48, value / 127)
         elif control == 19:
             for ctl in [16, 17, 18]:
-                yield from self._control_change_in(
-                    dict(channel=channel, control=ctl, value=value)
-                )
                 yield MidiCC(channel, ctl, value)
+                msg.control = ctl
+                yield from self._control_change_in(msg)
         elif control >= 16 and control <= 22:
             if channel < 6:
                 yield Msg("strings", channel, control, value)
@@ -86,8 +75,10 @@ class APC40(MidiDevice):
                 if control < 23:
                     for ch in range(0, 8):
                         yield MidiCC(ch, control, value)
+        elif control >= 48 and control <= 55:
+            yield Msg("xfade", control - 48, value / 127)
 
-    def _note_on_in(self, msg):
+    def _note_on_in(self, msg: MidiNote):
         note = msg.note
         if note == 91:
             yield Msg("play")
@@ -98,9 +89,14 @@ class APC40(MidiDevice):
             for ch in range(0, 9):
                 yield MidiNote(ch, 62, 0)
         elif note == 93:
-            signal = merge(self.on("play"), self.on("stop"))
-            interval(0.250).pipe(ops.take_until(signal)).subscribe(self.blink(62))
             yield Msg("rec")
+            yield (
+                val
+                for val in self.on("beat").pipe(
+                    ops.take_until(self.on(["play", "stop"])),
+                    ops.flat_map(lambda _: self.blink(62)),
+                )
+            )
         elif note == 94:  # up
             yield Msg("patch", -1)
         elif note == 95:  # down
@@ -115,10 +111,9 @@ class APC40(MidiDevice):
             yield Msg("phrase", -1)
         elif note == 98:
             yield self.shutdown()
-        else:
-            yield from self._note_in(msg)
+        yield from self._note_in(msg)
 
-    def _note_in(self, msg):
+    def _note_in(self, msg: MidiNote):
         channel = msg.channel
         note = msg.note
         value = msg.velocity
@@ -127,7 +122,21 @@ class APC40(MidiDevice):
                 for ch in range(0, 7):
                     yield MidiNote(ch, note, value)
         elif note == 50:
-            yield from self._bars_out(channel + 1)
+            bars = channel + 1
+            yield Msg("bars", bars)
+            for ch in range(0, bars):
+                yield MidiNote(ch, 50)
+            for ch in range(bars, 8):
+                yield MidiNote(ch, 50, 0)
 
-    def _note_off_in(self, msg):
+    def _note_off_in(self, msg: MidiNote):
         yield from self._note_in(msg)
+
+    def _strings_in(self, msg: Msg):
+        yield MidiCC(*msg.data)
+
+    def _beat_in(self, _):
+        return self.blink(63)
+
+    def _start_in(self, _):
+        return merge(self.blink(65), self.blink(63))

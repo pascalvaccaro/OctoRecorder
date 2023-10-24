@@ -19,7 +19,9 @@ if __name__ == "__main__":
     try:
         audio = OctoRecorder()
         control = APC40(CONTROL_DEVICE_NAME)
-        synth = SY1000(SYNTH_DEVICE_NAME, control)
+        synth = SY1000(SYNTH_DEVICE_NAME)
+        control.bind(synth)
+        synth.bind(control)
         audio.bind(synth, control)
         logging.info("[ALL] Connected & started")
         while True:

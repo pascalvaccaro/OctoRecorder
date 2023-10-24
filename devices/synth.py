@@ -1,29 +1,33 @@
-from reactivex import operators as ops, scheduler as sch
-from midi import MidiCC, SysexCmd, SysexReq, MidiDevice
-from devices import APC40
+from midi import SysexCmd, SysexReq, MidiDevice, InternalMessage, throttle
 from utils import clip, scroll
 
 
 class SY1000(MidiDevice):
-    scheduler = sch.EventLoopScheduler()
+    patch = 0
 
     @property
-    def select_messages(self):
-        return lambda msg: msg.type in ["clock", "start", "stop", "program_change"]
+    def init_actions(self):
+        for i in range(3):
+            instr = 11 * i + 21
+            yield SysexReq("patch", [instr, 2, 0, 0, 0, 1])
+            yield SysexReq("patch", [instr, 6, 0, 0, 0, 12])
+        yield SysexReq("common", [0, 0, 0, 0, 0, 4])
 
-    def __init__(self, *args, **kwargs):
-        super(SY1000, self).__init__(*args, **kwargs)
-        self._get_strings()
-        self.patch = 0
-        self.subs.add(self.messages.subscribe(self.send))
-        if isinstance(self.external, APC40):
-            self.on("start", self.external.blink(63))
-            self.on("beat", self.external.blink(65))
-            self.external.on("bars", self.set_bars)
-            self.external.on("patch", self._set_patch)
-            self.external.on("strings", self._set_strings)
+    @property
+    def select_message(self):
+        return lambda msg: msg.type in [
+            "sysex",
+            "clock",
+            "start",
+            "stop",
+            "program_change",
+        ]
 
-    def _sysex_in(self, msg):
+    @property
+    def external_message(self):
+        return lambda msg: msg.type in ["bars", "patch", "strings"]
+
+    def _sysex_in(self, msg: SysexCmd):
         if msg.data[0] != 65 or msg.data[6] != 18:
             yield
         data = msg.data[6:]
@@ -34,29 +38,20 @@ class SY1000(MidiDevice):
                 channel = divmod(i, 6)[1] if data[4] != 2 else 8
                 control = clip((data[3] + 155) / 11 + (4 if i >= 6 else 0))
                 value = clip(d / 100 * 127)
-                self.external.send(MidiCC(channel, control, value))
+                yield InternalMessage("strings", channel, control, value)
 
     def _program_change_in(self, _):
-        self._get_patch()
+        yield from self.init_actions
 
-    def _get_patch(self):
-        self.send(SysexReq("common", [0, 0, 0, 0, 0, 4]))
-        self._get_strings()
-
-    def _set_patch(self, values):
-        offset = values[0]
+    def _patch_in(self, msg: InternalMessage):
+        offset = msg.data[0]
         self.patch = scroll(self.patch + offset, 0, 399)
         data = map(lambda x: int(x, 16), list(hex(self.patch)[2:].zfill(4)))
-        self.send(SysexCmd("common", [0, 0, *data]))
+        yield SysexCmd("common", [0, 0, *data])
 
-    def _get_strings(self, instrs=[1, 2, 3]):
-        for i in instrs:
-            instr = 11 * i + 10
-            self.send(SysexReq("patch", [instr, 2, 0, 0, 0, 1]))
-            self.send(SysexReq("patch", [instr, 6, 0, 0, 12]))
-
-    def _set_strings(self, values):
-        channel, control, value = values
+    @throttle(24 / 1000)
+    def _strings_in(self, msg: InternalMessage):
+        channel, control, value = msg.data
         instr = (
             21
             if control == 16 or control == 20
@@ -68,10 +63,10 @@ class SY1000(MidiDevice):
         value = clip(value / 127 * 100)
 
         if channel < 8:
-            self.send(SysexCmd("patch", [instr, string, value]))
+            yield SysexCmd("patch", [instr, string, value])
         elif channel == 8:
             if control < 19:
-                self.send(SysexCmd("patch", [instr, 6, *[value] * 6]))
+                yield SysexCmd("patch", [instr, 6, *[value] * 6])
             elif control < 23:
                 for instr in [21, 32, 43]:
-                    self.send(SysexCmd("patch", [instr, 12, *[value] * 6]))
+                    yield SysexCmd("patch", [instr, 12, *[value] * 6])
