@@ -95,7 +95,7 @@ class OctoRecorder:
 
     @x.setter
     def x(self, values):
-        self._x = minmax(t2i(values))
+        self._x = minmax(t2i(values) / 127)
 
     def __init__(self, bars=2):
         self.bars = bars
@@ -176,11 +176,11 @@ class OctoRecorder:
 
     def _volume(self, values):
         track, value = values
-        self.vsliders[0][track] = minmax(value)
+        self.vsliders[0][track] = minmax(value / 127)
 
     def _xfade(self, values):
         track, value = values
-        self.xfaders[0][track] = minmax(value)
+        self.xfaders[0][track] = minmax(value / 127)
 
     def _xfader(self, values):
         self.x = values

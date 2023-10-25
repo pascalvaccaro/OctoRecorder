@@ -1,11 +1,5 @@
-from typing import Union
-from reactivex import from_iterable, scheduler as sch
-from reactivex.typing import ScheduledAction, _TState
-from reactivex.abc import DisposableBase
-from reactivex.disposable import Disposable
 import mido
 import logging
-from datetime import datetime, timedelta
 
 SYNTH_SYSEX_HEAD = [65, 0, 0, 0, 0, 105]
 SYNTH_SYSEX_REQ = [*SYNTH_SYSEX_HEAD, 17]
@@ -80,26 +74,3 @@ class InternalMessage(object):
 
     def is_cc(self):
         return False
-
-
-class BottleNeckScheduler(sch.EventLoopScheduler):
-    def __init__(self, timeout=0.0, *args, **kwargs):
-        self.timeout = timedelta(seconds=timeout)
-        self.last = datetime.now()
-        super(BottleNeckScheduler, self).__init__(*args, **kwargs)
-
-    def schedule(
-        self, action: ScheduledAction[Sysex], state: Union[Sysex, None] = None
-    ) -> DisposableBase:
-        if datetime.now() - self.last < self.timeout:
-            return self.schedule_relative(self.timeout, action, state)
-        self.last = datetime.now()
-        return super(BottleNeckScheduler, self).schedule(action, state)
-
-
-def throttle(timeout: float):
-    scheduler = BottleNeckScheduler(timeout)
-    return lambda func: lambda *args, **kwargs: from_iterable(
-        func(*args, **kwargs), scheduler
-    )
-

@@ -1,6 +1,6 @@
 import reactivex.operators as ops
 from reactivex import of, concat, timer, scheduler as sch, merge
-from midi import MidiNote, MidiCC, MidiDevice, InternalMessage as Msg, debounce
+from midi import MidiNote, MidiCC, MidiDevice, InternalMessage as Msg
 
 
 class APC40(MidiDevice):
@@ -40,7 +40,6 @@ class APC40(MidiDevice):
             ops.subscribe_on(sch.TimeoutScheduler()),
         )
 
-    # @debounce(lambda a, b: a.data[0] == b.data[0] and a.data[1] == b.data[1], 24 / 1000)
     def _control_change_in(self, msg: MidiCC):
         channel = msg.channel
         control = msg.control
@@ -57,26 +56,24 @@ class APC40(MidiDevice):
         elif control == 67:
             yield Msg("stop", None)
         elif control == 7:
-            yield Msg("volume", channel, value / 127)
+            yield Msg("volume", channel, value)
         elif control == 14:
             for ch in range(0, 8):
-                yield Msg("volume", ch, value / 127)
+                yield Msg("volume", ch, value)
         elif control == 15:
-            yield Msg("xfader", value / 127)
+            yield Msg("xfader", value)
         elif control == 19:
             for ctl in [16, 17, 18]:
                 yield MidiCC(channel, ctl, value)
                 msg.control = ctl
                 yield from self._control_change_in(msg)
-        elif control >= 16 and control <= 22:
-            if channel < 6:
-                yield Msg("strings", channel, control, value)
-            elif channel == 8:
-                if control < 23:
-                    for ch in range(0, 8):
-                        yield MidiCC(ch, control, value)
-        elif control >= 48 and control <= 55:
-            yield Msg("xfade", control - 48, value / 127)
+        elif control in range(16, 23):
+            yield Msg("strings", channel, control, value)
+            if channel == 8:
+                for ch in range(0, 8):
+                    yield MidiCC(ch, control, value)
+        elif control in range(48, 56):
+            yield Msg("xfade", control - 48, value)
 
     def _note_on_in(self, msg: MidiNote):
         note = msg.note

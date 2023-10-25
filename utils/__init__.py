@@ -22,6 +22,10 @@ def scroll(n: int, smallest=0, largest=127):
     return n
 
 
+def t2i(values):
+    return values[0] if isinstance(values, tuple) else values
+
+
 def doubleclick(s):
     """Decorator ensures function only runs if called twice under `s` seconds."""
 
@@ -38,9 +42,3 @@ def doubleclick(s):
         return wrapped
 
     return decorate
-
-
-def t2i(values):
-    if isinstance(values, tuple):
-        return values[0]
-    return values

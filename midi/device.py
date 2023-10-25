@@ -30,7 +30,7 @@ def connect(
         return connect(port, timeout)
 
 
-class MidiDevice(Metronome):
+class MidiDevice(object):
     _suspend = None
 
     def __init__(self, port):
@@ -60,6 +60,10 @@ class MidiDevice(Metronome):
         self._suspend = value
 
     @property
+    def scheduler(self):
+        return sch.CurrentThreadScheduler()
+
+    @property
     def to_action(self):
         event_loop = sch.EventLoopScheduler()
 
@@ -72,12 +76,14 @@ class MidiDevice(Metronome):
                 return never()
             action = getattr(self, "_" + msg.type + "_in")
             source = action(msg) if action is not None else None
+            observer = ops.observe_on(event_loop)
+
             if isinstance(source, Observable):
-                return source.pipe(ops.observe_on(event_loop))
+                return source.pipe(observer)
             if isinstance(source, Iterable):
-                return from_iterable(source, event_loop)
+                return from_iterable(source).pipe(observer)
             if source is not None:
-                return of(source)
+                return of(source).pipe(observer)
             return never()
 
         return wrapped
@@ -93,17 +99,15 @@ class MidiDevice(Metronome):
                 ops.flat_map(self.to_action),
                 ops.start_with(*self.init_actions),
             )
-            .subscribe(self.send)
+            .subscribe(self.send, scheduler=self.scheduler)
         )
 
     def bind(self, device: "MidiDevice"):
-        event_loop = sch.EventLoopScheduler()
         self.subs.add(
             device.bridge.pipe(
-                ops.observe_on(event_loop),
                 ops.filter(self.external_message),
                 ops.flat_map(self.to_action),
-            ).subscribe(self.send)
+            ).subscribe(self.send, scheduler=self.scheduler)
         )
 
     @overload
@@ -150,7 +154,7 @@ class MidiDevice(Metronome):
                     else:
                         log.insert(0, "[OUT] %s message to %s: %s")
                         self.outport.send(msg)
-                if msg.type not in ["beat", "note_on", "note_off"]: # type: ignore
+                if msg.type not in ["beat", "note_on", "note_off"]:  # type: ignore
                     logging.debug(*log)
         except Exception as e:
             logging.error("[OUT] %s %s", self.name, e)

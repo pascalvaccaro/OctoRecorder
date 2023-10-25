@@ -1,9 +1,13 @@
-from midi import SysexCmd, SysexReq, MidiDevice, InternalMessage, throttle
+from midi import Metronome, ClockScheduler, SysexCmd, SysexReq, MidiDevice, InternalMessage
 from utils import clip, scroll
 
 
-class SY1000(MidiDevice):
+class SY1000(Metronome, MidiDevice):
     patch = 0
+
+    @property
+    def scheduler(self):
+        return ClockScheduler(0.024)
 
     @property
     def init_actions(self):
@@ -49,7 +53,6 @@ class SY1000(MidiDevice):
         data = map(lambda x: int(x, 16), list(hex(self.patch)[2:].zfill(4)))
         yield SysexCmd("common", [0, 0, *data])
 
-    @throttle(24 / 1000)
     def _strings_in(self, msg: InternalMessage):
         channel, control, value = msg.data
         instr = (
@@ -65,8 +68,9 @@ class SY1000(MidiDevice):
         if channel < 8:
             yield SysexCmd("patch", [instr, string, value])
         elif channel == 8:
+            all_values = [value] * 6
             if control < 19:
-                yield SysexCmd("patch", [instr, 6, *[value] * 6])
+                yield SysexCmd("patch", [instr, 6, *all_values])
             elif control < 23:
                 for instr in [21, 32, 43]:
-                    yield SysexCmd("patch", [instr, 12, *[value] * 6])
+                    yield SysexCmd("patch", [instr, 12, *all_values])
