@@ -4,7 +4,7 @@ load_dotenv()
 import os
 import logging
 
-DEBUG=int(os.environ.get("DEBUG", logging.INFO))
+DEBUG = int(os.environ.get("DEBUG", logging.INFO))
 SYNTH_DEVICE_NAME = os.environ.get("SYNTH_DEVICE", "SY-1000 MIDI 1")
 CONTROL_DEVICE_NAME = os.environ.get("CONTROL_DEVICE", "Akai APC40 MIDI 1")
 logging.basicConfig(
@@ -14,21 +14,13 @@ logging.basicConfig(
 )
 
 from devices import OctoRecorder, SY1000, APC40
+from midi import MidiDevice
 
 if __name__ == "__main__":
     try:
-        audio = OctoRecorder()
         control = APC40(CONTROL_DEVICE_NAME)
         synth = SY1000(SYNTH_DEVICE_NAME)
-        control.bind(synth)
-        synth.bind(control)
-        audio.bind(synth, control)
-        logging.info("[ALL] Connected & started")
-        while True:
-            continue
+        OctoRecorder(synth, control)
+        MidiDevice.start(DEBUG <= 10).wait()
     except KeyboardInterrupt:
-        print("")
-    except Exception as e:
-        logging.error(e)
-        if DEBUG <= 10:
-            raise e
+        logging.info("[ALL] Stopped by user")

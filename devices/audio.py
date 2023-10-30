@@ -3,6 +3,7 @@ import numpy as np
 import sounddevice as sd
 from audioop import tostereo, tomono
 from midi import MidiDevice
+from midi.beat import beat, start
 from utils import split, minmax, scroll, t2i
 
 
@@ -97,8 +98,7 @@ class OctoRecorder:
     def x(self, values):
         self._x = minmax(t2i(values) / 127)
 
-    def __init__(self, bars=2):
-        self.bars = bars
+    def __init__(self, *devices: MidiDevice):
         self.vsliders = np.ones((1, 8), dtype=np.float32)
         self.xfaders = np.array(([self.x] * 8), dtype=np.float32)
         self.data = np.zeros((16, self.maxsize, 8), dtype=np.float32)
@@ -108,23 +108,22 @@ class OctoRecorder:
             sy1000.name,
             sy1000.samplerate,
         )
-
-    def bind(self, synth: MidiDevice, control: MidiDevice):
-        synth.on("start", self._start)
-        synth.on("stop", self._stop)
-        control.on("stop", self._stop)
+        synth, control = devices
         for ev in ("volume", "xfade", "xfader"):
             control.on(ev, getattr(self, "_" + ev))
         for ev in ("play", "rec", "toggle"):
-            control.on(ev, getattr(self, "_" + ev), "start")
+            control.on(ev, getattr(self, "_" + ev), start)
         for ev in ("phrase", "bars"):
-            control.on(ev, getattr(self, "_set_" + ev), "beat")
+            control.on(ev, getattr(self, "_set_" + ev), beat)
+        control.on("stop", self._stop, beat)
+        synth.on("stop", self._stop)
+        synth.subs = start.subscribe(self._start)
 
     def _start(self, bars):
         self.bars = bars
         self.current_frame = 0
         self.data.resize(16, self.maxsize, 8)
-        logging.debug("[SD] %s %i chunk of data", self.state, self.maxsize)
+        logging.info("[SD] %s %i chunk of data", self.state, self.maxsize)
 
     def _callback(self, indata, outdata, frames, time, status):
         if status:

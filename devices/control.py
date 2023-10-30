@@ -1,9 +1,16 @@
-import reactivex.operators as ops
-from reactivex import of, concat, timer, scheduler as sch, merge
-from midi import MidiNote, MidiCC, MidiDevice, InternalMessage as Msg
+from reactivex import merge, operators as ops
+from midi import MidiNote, MidiCC, MidiDevice, InternalMessage as Msg, make_note
+from midi.beat import beat, start
 
 
 class APC40(MidiDevice):
+    def __init__(self, port):
+        super().__init__(port)
+        self.subs = merge(
+            beat.pipe(ops.flat_map(self._beat_in)),
+            start.pipe(ops.flat_map(self._start_in)),
+        ).subscribe(self.send)
+
     @property
     def select_message(self):
         return lambda msg: msg.type in [
@@ -29,29 +36,16 @@ class APC40(MidiDevice):
     @property
     def external_message(self):
         return lambda msg: msg.type in [
-            "start",
-            "beat",
             "strings",
         ]
 
-    def blink(self, note: int):
-        return concat(of(127), timer(0.1)).pipe(
-            ops.map(lambda x: MidiNote(self.channel, note, x)),
-            ops.subscribe_on(sch.TimeoutScheduler()),
-        )
-
-    def _control_change_in(self, msg: MidiCC):
+    def _control_change_in(self, msg: MidiCC, is_rec=False):
         channel = msg.channel
         control = msg.control
         value = msg.value
-        if control == 23:
+        if not is_rec and channel >= 0:
             self.channel = channel
-            self.suspend = (
-                lambda msg: isinstance(msg, MidiCC)
-                and msg.channel == channel
-                and msg.control == control - 1
-            )
-        elif control == 64:
+        if control == 64:
             yield Msg("toggle", None)
         elif control == 67:
             yield Msg("stop", None)
@@ -66,7 +60,7 @@ class APC40(MidiDevice):
             for ctl in [16, 17, 18]:
                 yield MidiCC(channel, ctl, value)
                 msg.control = ctl
-                yield from self._control_change_in(msg)
+                yield from self._control_change_in(msg, True)
         elif control in range(16, 23):
             yield Msg("strings", channel, control, value)
             if channel == 8:
@@ -87,12 +81,9 @@ class APC40(MidiDevice):
                 yield MidiNote(ch, 62, 0)
         elif note == 93:
             yield Msg("rec")
-            yield (
-                val
-                for val in self.on("beat").pipe(
-                    ops.take_until(self.on(["play", "stop"])),
-                    ops.flat_map(lambda _: self.blink(62)),
-                )
+            return beat.pipe(
+                ops.take_until(self.on(["play", "stop"])),
+                ops.flat_map(lambda _: make_note(self.channel, 62)),
             )
         elif note == 94:  # up
             yield Msg("patch", -1)
@@ -133,7 +124,7 @@ class APC40(MidiDevice):
         yield MidiCC(*msg.data)
 
     def _beat_in(self, _):
-        return self.blink(63)
+        return make_note(self.channel, 63)
 
     def _start_in(self, _):
-        return merge(self.blink(65), self.blink(63))
+        return merge(*(make_note(self.channel, note) for note in (65, 63)))

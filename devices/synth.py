@@ -1,13 +1,13 @@
-from midi import Metronome, ClockScheduler, SysexCmd, SysexReq, MidiDevice, InternalMessage
+from midi import Metronome, SysexCmd, SysexReq, MidiDevice, InternalMessage
 from utils import clip, scroll
 
 
 class SY1000(Metronome, MidiDevice):
     patch = 0
 
-    @property
-    def scheduler(self):
-        return ClockScheduler(0.024)
+    def __init__(self, port):
+        super(SY1000, self).__init__(port)
+        self.subs = self.start_clock(self.inport)
 
     @property
     def init_actions(self):
@@ -20,16 +20,11 @@ class SY1000(Metronome, MidiDevice):
     @property
     def select_message(self):
         return lambda msg: msg.type in [
+            "program_change",
             "sysex",
-            "clock",
             "start",
             "stop",
-            "program_change",
         ]
-
-    @property
-    def external_message(self):
-        return lambda msg: msg.type in ["bars", "patch", "strings"]
 
     def _sysex_in(self, msg: SysexCmd):
         if msg.data[0] != 65 or msg.data[6] != 18:
@@ -46,6 +41,13 @@ class SY1000(Metronome, MidiDevice):
 
     def _program_change_in(self, _):
         yield from self.init_actions
+
+    def _stop_in(self, _=None):
+        yield InternalMessage("stop", 0)
+
+    @property
+    def external_message(self):
+        return lambda msg: msg.type in ["bars", "patch", "strings"]
 
     def _patch_in(self, msg: InternalMessage):
         offset = msg.data[0]
