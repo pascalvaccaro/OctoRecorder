@@ -27,6 +27,9 @@ def t2i(values):
     return values[0] if isinstance(values, tuple) else values
 
 
+from utils.mixer import Mixer
+
+
 def doubleclick(s):
     """Decorator ensures function only runs if called twice under `s` seconds."""
 
