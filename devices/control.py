@@ -1,18 +1,13 @@
-from reactivex import merge, operators as ops
+from reactivex import merge, of, operators as ops
 from midi import MidiNote, MidiCC, MidiDevice, InternalMessage as Msg, make_note
-from midi.beat import beat, start
-
-FORBIDDEN_CC = range(16, 24)
-FORBIDDEN_CHECKSUM = sum(FORBIDDEN_CC)
+from midi.clock import beat, start
 
 
 class APC40(MidiDevice):
     def __init__(self, port):
         super().__init__(port)
-        self.subs = merge(
-            beat.pipe(ops.flat_map(self._beat_in)),
-            start.pipe(ops.flat_map(self._start_in)),
-        ).subscribe(self.send)
+        for sched in (beat, start):
+            self.subs = sched.sync(self)
 
     @property
     def select_message(self):
@@ -34,6 +29,10 @@ class APC40(MidiDevice):
                 yield MidiNote(ch, note)
         yield MidiCC(0, 14, 127)
         yield MidiCC(0, 15, 64)
+        for ctl in range(16, 20):
+            yield MidiCC(8, ctl, 127)
+        for ctl in range(20, 24):
+            yield MidiCC(8, ctl, 64)
         yield from self._note_in(MidiNote(1, 50))
 
     @property
@@ -81,10 +80,13 @@ class APC40(MidiDevice):
             for ch in range(0, 9):
                 yield MidiNote(ch, 62, 0)
         elif note == 93:
-            yield Msg("rec")
-            return beat.pipe(
-                ops.take_until(self.on(["play", "stop"])),
-                ops.flat_map(lambda _: make_note(self.channel, 62)),
+            stopper = lambda msg: msg.type in ["play", "stop"]
+            return merge(
+                of(Msg("rec")),
+                beat.signal.pipe(
+                    ops.take_until(self.pipe(ops.filter(stopper))),
+                    ops.flat_map(lambda _: make_note(self.channel, 62)),
+                ),
             )
         elif note == 94:  # up
             yield Msg("patch", -1)
@@ -129,15 +131,3 @@ class APC40(MidiDevice):
 
     def _start_in(self, _):
         return merge(*(make_note(self.channel, note) for note in (65, 63)))
-
-    def clean_messages(self, msg, messages=[]):
-        if msg.type == "control_change":
-            cc = filter(lambda m: m.type == "control_change", messages)
-            # Block CC messages sent on track selection
-            if msg.control in FORBIDDEN_CC:
-                if sum(map(lambda m: m.control, cc)) == FORBIDDEN_CHECKSUM:
-                    self.channel = msg.channel
-                    return filter(lambda m: m.type != "control_change", messages)
-            # Buffer identical CC messages
-            return filter(lambda m: m.control != msg.control, cc)
-        return messages

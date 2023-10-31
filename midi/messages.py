@@ -6,6 +6,22 @@ SYNTH_SYSEX_REQ = [*SYNTH_SYSEX_HEAD, 17]
 SYNTH_SYSEX_CMD = [*SYNTH_SYSEX_HEAD, 18]
 SYNTH_ADDRESSES = {"common": [0, 1], "patch": [16, 0]}
 
+CONTROL_FORBIDDEN_CC = range(16, 24)
+CONTROL_FORBIDDEN_CHECKSUM = sum(CONTROL_FORBIDDEN_CC)
+
+
+def clean_messages(item, messages=[]):
+    if item.type == "control_change":
+        cc = filter(lambda m: m.type == "control_change", messages)
+        # Block CC messages sent on track selection
+        if item.control in CONTROL_FORBIDDEN_CC:
+            if sum(map(lambda m: m.control, cc)) == CONTROL_FORBIDDEN_CHECKSUM:
+                item.channel = item.channel
+                return list(filter(lambda m: m.type != "control_change", messages))
+        # Buffer identical CC messages
+        return list(filter(lambda m: m.control != item.control, cc))
+    return messages
+
 
 def checksum(addr, body=[]):
     head = SYNTH_ADDRESSES[addr]
@@ -17,7 +33,11 @@ def checksum(addr, body=[]):
         return [*head, *body, 0]
 
 
-class Sysex(mido.messages.Message):
+class MidiMessage(mido.messages.Message):
+    type: str
+
+
+class Sysex(MidiMessage):
     data: "list[int]"
 
     def __init__(self, type, addr, data, *args, **kwargs):
@@ -37,7 +57,7 @@ class SysexReq(Sysex):
         super(SysexReq, self).__init__("REQ", *args, **kwargs)
 
 
-class MidiNote(mido.messages.Message):
+class MidiNote(MidiMessage):
     channel: int
     note: int
     velocity: int
@@ -52,7 +72,7 @@ class MidiNote(mido.messages.Message):
         )
 
 
-class MidiCC(mido.messages.Message):
+class MidiCC(MidiMessage):
     channel: int
     control: int
     value: int

@@ -1,4 +1,5 @@
 import time
+from utils.bridge import Bridge
 
 
 def minmax(n: float, smallest=0, largest=1):
