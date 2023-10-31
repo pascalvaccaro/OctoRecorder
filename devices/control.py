@@ -2,6 +2,9 @@ from reactivex import merge, operators as ops
 from midi import MidiNote, MidiCC, MidiDevice, InternalMessage as Msg, make_note
 from midi.beat import beat, start
 
+FORBIDDEN_CC = range(16, 24)
+FORBIDDEN_CHECKSUM = sum(FORBIDDEN_CC)
+
 
 class APC40(MidiDevice):
     def __init__(self, port):
@@ -39,12 +42,10 @@ class APC40(MidiDevice):
             "strings",
         ]
 
-    def _control_change_in(self, msg: MidiCC, is_rec=False):
+    def _control_change_in(self, msg: MidiCC):
         channel = msg.channel
         control = msg.control
         value = msg.value
-        if not is_rec and channel >= 0:
-            self.channel = channel
         if control == 64:
             yield Msg("toggle", None)
         elif control == 67:
@@ -60,7 +61,7 @@ class APC40(MidiDevice):
             for ctl in [16, 17, 18]:
                 yield MidiCC(channel, ctl, value)
                 msg.control = ctl
-                yield from self._control_change_in(msg, True)
+                yield from self._control_change_in(msg)
         elif control in range(16, 23):
             yield Msg("strings", channel, control, value)
             if channel == 8:
@@ -128,3 +129,15 @@ class APC40(MidiDevice):
 
     def _start_in(self, _):
         return merge(*(make_note(self.channel, note) for note in (65, 63)))
+
+    def clean_messages(self, msg, messages=[]):
+        if msg.type == "control_change":
+            cc = filter(lambda m: m.type == "control_change", messages)
+            # Block CC messages sent on track selection
+            if msg.control in FORBIDDEN_CC:
+                if sum(map(lambda m: m.control, cc)) == FORBIDDEN_CHECKSUM:
+                    self.channel = msg.channel
+                    return filter(lambda m: m.type != "control_change", messages)
+            # Buffer identical CC messages
+            return filter(lambda m: m.control != msg.control, cc)
+        return messages

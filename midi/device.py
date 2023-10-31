@@ -12,7 +12,7 @@ import reactivex.operators as ops
 import reactivex.disposable as dsp
 import reactivex.scheduler as sch
 
-from midi.messages import InternalMessage
+from midi import InternalMessage
 from midi.beat import loop as event_loop
 from utils import doubleclick
 
@@ -33,7 +33,6 @@ def connect(
 
 
 class MidiDevice(object):
-    _suspend = None
     _subs: MutableSet[DisposableBase] = set()
     _devices: MutableSet["MidiDevice"] = set()
 
@@ -62,14 +61,6 @@ class MidiDevice(object):
     def subs(self, sub):
         self._subs.add(sub)
 
-    @property
-    def suspend(self):
-        return self._suspend
-
-    @suspend.setter
-    def suspend(self, value: Union[Callable[[Any], bool], None]):
-        self._suspend = value
-
     def messages(self, msg):
         if msg is None:
             return never()
@@ -88,38 +79,44 @@ class MidiDevice(object):
             return of(messages)
         return never()
 
-    def observer(
+    def subscriber(
         self,
         final: ObserverBase[mido.messages.Message],
         scheduler: Optional[SchedulerBase] = event_loop,
     ):
+        disp = dsp.MultipleAssignmentDisposable()
+
         def on_error(e):
             final.on_error(e)
             return True
 
-        def action(sched, state=None):
+        def scheduled_action(sched, state=None):
             if state is None:
                 state = dsp.MultipleAssignmentDisposable()
             if self.inport.closed:
                 final.on_completed()
                 state.dispose()
                 return state
+
             proxy = Observer(self.send, final.on_error)
             disp = dsp.CompositeDisposable(state.disposable)
-            for item in self.inport.iter_pending():
-                if self.select_message(item):
-                    self.debug_in(item)
-                    disp.add(self.messages(item).subscribe(proxy, scheduler=sched))
+            pending = list(filter(self.select_message, self.inport.iter_pending()))
+
+            while len(pending) > 0:
+                item = pending.pop()
+                self.debug(item)
+                disp.add(self.messages(item).subscribe(proxy, scheduler=sched))
+                pending = self.clean_messages(item, pending)
+
             if isinstance(sched, SchedulerBase):
-                state.disposable = dsp.CompositeDisposable(
-                    disp.disposable, sched.schedule_relative(0.12, action, state)
-                )
+                disp.add(sched.schedule_relative(0.12, scheduled_action, state))
+
+            state.disposable = disp
             return state
 
         sched = sch.CatchScheduler(scheduler or event_loop, on_error)
-        disp = dsp.MultipleAssignmentDisposable()
         disp.disposable = from_iterable(self.init_actions, sched).subscribe(self.send)
-        return action(sched, disp)
+        return scheduled_action(sched, disp)
 
     @classmethod
     def start(cls, debug=False):
@@ -145,7 +142,7 @@ class MidiDevice(object):
 
     def attach(self, device: "MidiDevice"):
         return (
-            Observable(self.observer)
+            Observable(self.subscriber)
             if self.name == device.name
             else device.bridge.pipe(
                 ops.filter(self.external_message),
@@ -153,6 +150,23 @@ class MidiDevice(object):
                 ops.map(self.send),
             )
         )
+
+    def send(self, msg):
+        if msg is None:
+            return
+        try:
+            if isinstance(msg, tuple):
+                msg = msg[0]
+            log = [msg.type.capitalize(), self.name, msg.dict()]
+            if isinstance(msg, InternalMessage):
+                self.bridge.on_next(msg)
+                log.insert(0, "[SUB] %s message through %s: %s")
+            elif isinstance(msg, mido.messages.Message):
+                self.outport.send(msg)
+                log.insert(0, "[OUT] %s message to %s: %s")
+            logging.debug(*log)
+        except Exception as e:
+            logging.error("[OUT] %s %s", self.name, e)
 
     @overload
     def on(self, event: Union[str, List[str]], cb: Callable) -> None:
@@ -183,50 +197,21 @@ class MidiDevice(object):
             return obs
         self.subs = obs.subscribe(cb)
 
-    def send(self, msg):
-        if isinstance(msg, tuple):
-            msg = msg[0]
-        try:
-            if msg is not None:
-                if isinstance(msg, InternalMessage):
-                    self.bridge.on_next(msg)
-                elif isinstance(msg, mido.messages.Message):
-                    if self.outport is None or self.outport.closed:
-                        logging.warning(
-                            "[OUT] No device %s, skipping message: %d",
-                            self.name,
-                            msg.dict(),
-                        )
-                    else:
-                        self.outport.send(msg)
-        except Exception as e:
-            logging.error("[OUT] %s %s", self.name, e)
-
-    def debug_in(self, msg):
-        if msg is None:
-            return
-        logging.debug(
-            "[IN] %s message from %s: %s",
-            msg.type.capitalize(),
-            self.name,
-            msg.dict(),
-        )
-
-    def debug_out(self, msg):
-        if msg is None:
-            return
-        if isinstance(msg, tuple):
-            msg = msg[0]
-        log = [msg.type.capitalize(), self.name, msg.dict()]
-        if isinstance(msg, InternalMessage):
-            log.insert(0, "[SUB] %s message through %s: %s")
-        elif isinstance(msg, mido.messages.Message):
-            log.insert(0, "[OUT] %s message to %s: %s")
-        logging.debug(*log)
+    def debug(self, msg):
+        if msg is not None:
+            logging.debug(
+                "[IN] %s message from %s: %s",
+                msg.type.capitalize(),
+                self.name,
+                msg.dict(),
+            )
 
     @doubleclick(0.4)
     def shutdown(self):
         os.system("sudo shutdown now")
+
+    def clean_messages(self, _, messages):
+        return messages
 
     @property
     def init_actions(self):
