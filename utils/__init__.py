@@ -1,6 +1,5 @@
 import time
-
-
+import logging
 def minmax(n: float, smallest=0, largest=1):
     return max(smallest, min(n, largest))
 
@@ -49,6 +48,7 @@ def retry(action, args, timeout=3):
 
     try:
         return action(*args)
-    except Exception:
+    except Exception as e:
+        logging.warn(e)
         time.sleep(timeout)
         return retry(action, args, timeout)

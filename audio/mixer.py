@@ -39,12 +39,9 @@ class Mixer(Bridge):
     def data(self):
         return self._data[self.phrase]
 
-    @data.setter
-    def data(self, values):
-        self._data.resize(values)
-
     def __init__(self, name, tracks):
         super(Mixer, self).__init__(name)
+        self.tracks = tracks
         self._data = np.zeros((self.MAX_PHRASES, 576000, tracks), dtype=np.float32)
 
     def _play_in(self, _):

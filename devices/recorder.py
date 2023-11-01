@@ -1,7 +1,7 @@
 import logging
 from sounddevice import Stream
 from audio import AudioDevice
-from midi import start
+from midi import Sequencer
 
 
 class Recorder(AudioDevice):
@@ -18,7 +18,7 @@ class Recorder(AudioDevice):
             channels=self.channels,
             callback=self._callback,
         )
-        self.subs = start.schedule_periodic(self._start_in)
+        self.subs = Sequencer._start.schedule_periodic(self._start_in)
         logging.info(
             "[SD] Connected device %s (%fHz)",
             self.name,
@@ -53,5 +53,5 @@ class Recorder(AudioDevice):
     def _start_in(self, bars):
         self.bars = bars
         self.current_frame = 0
-        self.data = (16, self.maxsize, self.channels)
+        self._data.resize((16, self.maxsize, self.tracks))
         logging.info("[SD] %s %i chunk of data", self.state, self.maxsize)

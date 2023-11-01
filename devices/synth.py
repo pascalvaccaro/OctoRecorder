@@ -1,8 +1,8 @@
-from midi import Metronome, SysexCmd, SysexReq, MidiDevice, InternalMessage
+from midi import Sequencer, SysexCmd, SysexReq, MidiDevice, InternalMessage
 from utils import clip, scroll
 
 
-class SY1000(MidiDevice, Metronome):
+class SY1000(MidiDevice, Sequencer):
     patch = 0
 
     @property
@@ -28,7 +28,7 @@ class SY1000(MidiDevice, Metronome):
 
     def __init__(self, port):
         super(SY1000, self).__init__(port)
-        self.subs = Metronome.__init__(self, self.inport)
+        Sequencer._start_in(self)
 
     def _sysex_in(self, msg: SysexCmd):
         if msg.data[0] != 65 or msg.data[6] != 18:

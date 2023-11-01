@@ -7,7 +7,7 @@ from midi.messages import (
     Sysex,
     MidiMessage,
 )
-from midi.clock import Metronome, beat, start, end
+from midi.clock import Sequencer
 from midi.device import MidiDevice
 from reactivex import merge, of, timer, operators as ops
 

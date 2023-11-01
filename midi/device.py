@@ -2,8 +2,10 @@ import os
 import logging
 import mido
 from typing import Optional, Union
-from reactivex import from_iterable, disposable as dsp, Observer, scheduler as sch
+from reactivex import from_iterable, Observer
 from reactivex.abc import SchedulerBase, ObserverBase
+from reactivex.disposable import MultipleAssignmentDisposable, CompositeDisposable
+from reactivex.scheduler import CatchScheduler
 
 from midi.messages import clean_messages, InternalMessage, MidiMessage, ControlException
 from utils import doubleclick, retry
@@ -39,7 +41,7 @@ class MidiDevice(Bridge):
         final: ObserverBase[Union[InternalMessage, MidiMessage]],
         scheduler: Optional[SchedulerBase] = None,
     ):
-        disp = dsp.MultipleAssignmentDisposable()
+        disp = MultipleAssignmentDisposable()
 
         def on_error(e):
             final.on_error(e)
@@ -47,14 +49,14 @@ class MidiDevice(Bridge):
 
         def scheduled_action(sched, state=None):
             if state is None:
-                state = dsp.MultipleAssignmentDisposable()
+                state = MultipleAssignmentDisposable()
             if self.is_closed:
                 final.on_completed()
                 state.dispose()
                 return state
 
             proxy = Observer(self.send, final.on_error)
-            disp = dsp.CompositeDisposable(state.disposable)
+            disp = CompositeDisposable(state.disposable)
             messages = [m for m in self.inport.iter_pending() if self.select_message(m)]
 
             while len(messages) > 0:
@@ -73,7 +75,7 @@ class MidiDevice(Bridge):
             state.disposable = disp
             return state
 
-        sched = sch.CatchScheduler(scheduler or sch.EventLoopScheduler(), on_error)
+        sched = CatchScheduler(scheduler or self._loop, on_error)
         disp.disposable = from_iterable(self.init_actions, sched).subscribe(self.send)
         return scheduled_action(sched, disp)
 

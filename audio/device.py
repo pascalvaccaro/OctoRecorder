@@ -1,6 +1,6 @@
 from sounddevice import query_devices
 from audio.mixer import Mixer
-from midi import start
+from midi import Sequencer
 from utils import retry
 
 
@@ -22,7 +22,7 @@ class AudioDevice(Mixer):
             self._playing = value
             self._recording = False if value else self._recording
 
-        start.schedule(wrapped)
+        Sequencer._start.schedule(wrapped)
 
     @recording.setter
     def recording(self, value: bool):
@@ -30,7 +30,7 @@ class AudioDevice(Mixer):
             self._recording = value
             self._playing = False if value else self._playing
 
-        start.schedule(wrapped)
+        Sequencer._start.schedule(wrapped)
 
     @property
     def samplerate(self):

@@ -3,8 +3,6 @@ from dotenv import load_dotenv
 load_dotenv()
 import os
 import logging
-from devices import APC40, SY1000, Recorder
-from bridge import Bridge
 
 DEBUG = int(os.environ.get("DEBUG", logging.INFO))
 SYNTH_DEVICE_NAME = os.environ.get("SYNTH_DEVICE", "SY-1000 MIDI 1")
@@ -16,6 +14,8 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
+from devices import APC40, SY1000, Recorder
+from bridge import Bridge
 
 if __name__ == "__main__":
     try:

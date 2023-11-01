@@ -1,6 +1,6 @@
 from reactivex import merge, of, operators as ops
 from midi import MidiNote, MidiCC, MidiDevice, InternalMessage as Msg, make_note
-from midi.clock import beat, start
+from midi.clock import Sequencer
 
 
 class APC40(MidiDevice):
@@ -36,7 +36,7 @@ class APC40(MidiDevice):
 
     def __init__(self, port):
         super().__init__(port)
-        for sched in (beat, start):
+        for sched in (Sequencer._beat, Sequencer._start):
             self.subs = sched.schedule_with(self)
 
     def _control_change_in(self, msg: MidiCC):
@@ -82,7 +82,7 @@ class APC40(MidiDevice):
             stopper = lambda msg: msg.type in ["play", "stop"]
             return merge(
                 of(Msg("rec")),
-                beat.signal.pipe(
+                Sequencer._beat.pipe(
                     ops.take_until(self.pipe(ops.filter(stopper))),
                     ops.flat_map(lambda _: make_note(self.channel, 62)),
                 ),
