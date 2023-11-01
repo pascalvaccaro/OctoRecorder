@@ -3,6 +3,8 @@ from dotenv import load_dotenv
 load_dotenv()
 import os
 import logging
+from devices import APC40, SY1000, Recorder
+from bridge import Bridge
 
 DEBUG = int(os.environ.get("DEBUG", logging.INFO))
 SYNTH_DEVICE_NAME = os.environ.get("SYNTH_DEVICE", "SY-1000 MIDI 1")
@@ -14,14 +16,12 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-from devices import OctoRecorder, SY1000, APC40
-from utils import Bridge
 
 if __name__ == "__main__":
     try:
         control = APC40(CONTROL_DEVICE_NAME)
         synth = SY1000(SYNTH_DEVICE_NAME)
-        audio = OctoRecorder(AUDIO_DEVICE_NAME)
+        audio = Recorder(AUDIO_DEVICE_NAME)
         Bridge.start(control, synth, audio).wait()
     except KeyboardInterrupt:
         logging.info("[ALL] Stopped by user")

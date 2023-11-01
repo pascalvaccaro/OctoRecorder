@@ -4,11 +4,6 @@ from midi.clock import beat, start
 
 
 class APC40(MidiDevice):
-    def __init__(self, port):
-        super().__init__(port)
-        for sched in (beat, start):
-            self.subs = sched.sync(self)
-
     @property
     def select_message(self):
         return lambda msg: msg.type in [
@@ -37,19 +32,18 @@ class APC40(MidiDevice):
 
     @property
     def external_message(self):
-        return lambda msg: msg.type in [
-            "strings",
-        ]
+        return lambda msg: msg.type in ["strings"]
+
+    def __init__(self, port):
+        super().__init__(port)
+        for sched in (beat, start):
+            self.subs = sched.schedule_with(self)
 
     def _control_change_in(self, msg: MidiCC):
         channel = msg.channel
         control = msg.control
         value = msg.value
-        if control == 64:
-            yield Msg("toggle", None)
-        elif control == 67:
-            yield Msg("stop", None)
-        elif control == 7:
+        if control == 7:
             yield Msg("volume", channel, value)
         elif control == 14:
             for ch in range(0, 8):
@@ -62,12 +56,17 @@ class APC40(MidiDevice):
                 msg.control = ctl
                 yield from self._control_change_in(msg)
         elif control in range(16, 23):
+            self.channel = channel
             yield Msg("strings", channel, control, value)
             if channel == 8:
                 for ch in range(0, 8):
                     yield MidiCC(ch, control, value)
         elif control in range(48, 56):
             yield Msg("xfade", control - 48, value)
+        elif control == 64:
+            yield Msg("toggle", None)
+        elif control == 67:
+            yield Msg("stop", None)
 
     def _note_on_in(self, msg: MidiNote):
         note = msg.note
@@ -96,12 +95,12 @@ class APC40(MidiDevice):
             yield Msg("patch", 4)
         elif note == 97:  # left
             yield Msg("patch", -4)
+        elif note == 98:
+            yield self.shutdown()
         elif note == 100:
             yield Msg("phrase", 1)
         elif note == 101:
             yield Msg("phrase", -1)
-        elif note == 98:
-            yield self.shutdown()
         yield from self._note_in(msg)
 
     def _note_in(self, msg: MidiNote):

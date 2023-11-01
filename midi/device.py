@@ -1,45 +1,38 @@
 import os
-import time
 import logging
 import mido
-from typing import Tuple, Optional, Union
+from typing import Optional, Union
 from reactivex import from_iterable, disposable as dsp, Observer, scheduler as sch
 from reactivex.abc import SchedulerBase, ObserverBase
 
-from midi.messages import clean_messages, InternalMessage, MidiMessage
-from utils import doubleclick, Bridge
+from midi.messages import clean_messages, InternalMessage, MidiMessage, ControlException
+from utils import doubleclick, retry
+from bridge import Bridge
 
 MIDO_BACKEND = os.environ.get("__MIDO_BACKEND__", "mido.backends.portmidi")
 mido.set_backend(MIDO_BACKEND, load=True)
 logging.info("[MID] Midi Backend started on %s", MIDO_BACKEND)
 
 
-def connect(port: str, timeout=3) -> Tuple[mido.ports.BaseInput, mido.ports.BaseOutput]:
-    try:
-        return mido.open_input(port), mido.open_output(port)  # type: ignore
-    except SystemError:
-        time.sleep(timeout)
-        return connect(port, timeout)
-
-
 class MidiDevice(Bridge):
+    @property
+    def is_closed(self):
+        return self.inport.closed
+
     def __init__(self, port):
-        self.channel = 0
         self.name: str = port[0:8]
-        self.inport, self.outport = connect(port)
         super(MidiDevice, self).__init__(self.name)
+        self.channel = 0
+        self.inport: mido.ports.BaseInput = retry(mido.open_input, [port])  # type: ignore
+        self.outport: mido.ports.BaseOutput = retry(mido.open_output, [port])  # type: ignore
         logging.info("[MID] %s connected via %s", self.name, MIDO_BACKEND)
 
     def __del__(self):
+        super(MidiDevice, self).__del__()
         if self.inport is not None and not self.inport.closed:
             self.inport.close()
         if self.outport is not None and not self.outport.closed:
             self.outport.close()
-        super(MidiDevice, self).__del__()
-
-    @property
-    def is_closed(self):
-        return self.inport.closed
 
     def subscriber(
         self,
@@ -62,13 +55,17 @@ class MidiDevice(Bridge):
 
             proxy = Observer(self.send, final.on_error)
             disp = dsp.CompositeDisposable(state.disposable)
-            pending = list(filter(self.select_message, self.inport.iter_pending()))
+            messages = [m for m in self.inport.iter_pending() if self.select_message(m)]
 
-            while len(pending) > 0:
-                item: Union[MidiMessage, InternalMessage] = pending.pop()
+            while len(messages) > 0:
+                item: Union[MidiMessage, InternalMessage] = messages.pop()
                 self.debug(item)
                 disp.add(self.to_messages(item).subscribe(proxy, scheduler=sched))
-                pending = clean_messages(item, pending)
+                try:
+                    messages = clean_messages(item, messages)
+                except ControlException as e:
+                    self.channel = e.channel
+                    messages.clear()
 
             if isinstance(sched, SchedulerBase):
                 disp.add(sched.schedule_relative(0.12, scheduled_action, state))

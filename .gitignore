@@ -1,2 +1,4 @@
 .vscode
 sounds/*.wav
+__pycache__
+playground.py

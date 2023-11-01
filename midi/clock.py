@@ -2,15 +2,11 @@ from reactivex import from_iterable, operators as ops
 from reactivex.subject import BehaviorSubject
 from reactivex.scheduler import EventLoopScheduler, CurrentThreadScheduler
 from midi import InternalMessage
-from utils import clip, scroll, t2i, Bridge
+from bridge import Bridge
+from utils import clip, scroll, t2i
 
 
 class ClockScheduler(CurrentThreadScheduler):
-    def __init__(self, name, *args, **kwargs):
-        super(ClockScheduler, self).__init__(*args, **kwargs)
-        self.name = InternalMessage(name)
-        self._signal = BehaviorSubject(2)
-
     @property
     def signal(self):
         return self._signal
@@ -19,19 +15,24 @@ class ClockScheduler(CurrentThreadScheduler):
     def signal(self, value):
         self._signal.on_next(value)
 
+    def __init__(self, name, *args, **kwargs):
+        super(ClockScheduler, self).__init__(*args, **kwargs)
+        self.name = InternalMessage(name)
+        self._signal = BehaviorSubject(2)
+
     def schedule(self, action, state=None):
         def on_next(val):
             super(ClockScheduler, self).schedule(action, val or state)
 
         return self.signal.subscribe(on_next)
 
-    def sync(self, device: Bridge):
+    def schedule_periodic(self, action):
+        return self.signal.subscribe(action)
+
+    def schedule_with(self, device: Bridge):
         return self.schedule(
             lambda _, __: device.to_messages(self.name).subscribe(device.send)
         )
-
-    def schedule_periodic(self, action):
-        return self.signal.subscribe(action)
 
 
 start = ClockScheduler("start")
@@ -40,7 +41,7 @@ beat = ClockScheduler("beat")
 clock = EventLoopScheduler()
 
 
-class Metronome(object):
+class Metronome:
     _bars = 2
     _counter = -1
 
@@ -68,9 +69,9 @@ class Metronome(object):
     def is_clock(self):
         return lambda msg: msg.type == "clock"
 
-    def start_clock(self, messages):
+    def __init__(self, inport):
         return (
-            from_iterable(messages, clock)
+            from_iterable(inport, clock)
             .pipe(ops.filter(self.is_clock))
             .subscribe(self._clock_in)
         )

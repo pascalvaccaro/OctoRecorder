@@ -10,17 +10,23 @@ CONTROL_FORBIDDEN_CC = range(16, 24)
 CONTROL_FORBIDDEN_CHECKSUM = sum(CONTROL_FORBIDDEN_CC)
 
 
-def clean_messages(item, messages=[]):
+class ControlException(Exception):
+    def __init__(self, channel, *args: object) -> None:
+        super().__init__(*args)
+        self.channel = channel
+
+
+def clean_messages(item, messages=[]) -> "list":
     if item.type == "control_change":
-        cc = filter(lambda m: m.type == "control_change", messages)
+        cc = [m for m in messages if m.type == "control_change"]
         # Block CC messages sent on track selection
         if item.control in CONTROL_FORBIDDEN_CC:
             if sum(map(lambda m: m.control, cc)) == CONTROL_FORBIDDEN_CHECKSUM:
-                item.channel = item.channel
-                return list(filter(lambda m: m.type != "control_change", messages))
+                # A tiny hack to set the channel on track selection
+                raise ControlException(item.channel)
         # Buffer identical CC messages
-        return list(filter(lambda m: m.control != item.control, cc))
-    return messages
+        return [m for m in cc if m.control != item.control]
+    return [*messages]
 
 
 def checksum(addr, body=[]):

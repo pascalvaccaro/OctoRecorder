@@ -1,5 +1,4 @@
 import time
-from utils.bridge import Bridge
 
 
 def minmax(n: float, smallest=0, largest=1):
@@ -27,9 +26,6 @@ def t2i(values):
     return values[0] if isinstance(values, tuple) else values
 
 
-from utils.mixer import Mixer
-
-
 def doubleclick(s):
     """Decorator ensures function only runs if called twice under `s` seconds."""
 
@@ -46,3 +42,13 @@ def doubleclick(s):
         return wrapped
 
     return decorate
+
+
+def retry(action, args, timeout=3):
+    """Retry mechanism for connecting hardware"""
+
+    try:
+        return action(*args)
+    except Exception:
+        time.sleep(timeout)
+        return retry(action, args, timeout)
