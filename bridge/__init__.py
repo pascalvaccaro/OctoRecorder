@@ -92,8 +92,9 @@ class Bridge(BehaviorSubject[InternalMessage]):
     def subscriber(self, _, __):
         return SingleAssignmentDisposable()
 
-    def send(self, _):
-        return None
+    def send(self, msg):
+        if isinstance(msg, InternalMessage):
+            self.on_next(msg)
 
     @property
     def init_actions(self):
@@ -105,8 +106,8 @@ class Bridge(BehaviorSubject[InternalMessage]):
 
     @property
     def select_message(self):
-        return NotImplemented
+        return lambda _: False
 
     @property
     def external_message(self):
-        return NotImplemented
+        return lambda _: False

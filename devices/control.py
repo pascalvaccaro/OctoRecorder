@@ -1,16 +1,11 @@
 from midi.messages import MidiNote, MidiCC, InternalMessage as Msg
-from midi import MidiDevice, Sequencer, make_notes
+from midi import MidiDevice, make_notes
 
 
 class APC40(MidiDevice):
     blinks: "set[int]" = set([63])
     targets: "set[int]" = set()
     steps = [[0] * 8] * 6
-
-    def __init__(self, port):
-        super().__init__(port)
-        for sched in (Sequencer._beat, Sequencer._start):
-            self.subs = sched.schedule_with(self)
 
     @property
     def init_actions(self):
@@ -32,15 +27,18 @@ class APC40(MidiDevice):
 
     @property
     def select_message(self):
-        return lambda msg: msg.type in [
-            "control_change",
-            "note_on",
-            "note_off",
-        ]
+        return lambda msg: msg.type in ["control_change", "note_on", "note_off"]
 
     @property
     def external_message(self):
-        return lambda msg: msg.type in ["strings", "pitch", "cutoff", "level"]
+        return lambda msg: msg.type in [
+            "strings",
+            "pitch",
+            "cutoff",
+            "level",
+            "beat",
+            "start",
+        ]
 
     def _control_change_in(self, msg: MidiCC):
         channel = msg.channel

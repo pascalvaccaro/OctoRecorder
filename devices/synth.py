@@ -1,8 +1,8 @@
-from midi import Sequencer, SysexCmd, SysexReq, MidiDevice, InternalMessage as Msg
+from midi import MidiDevice, SysexCmd, SysexReq, InternalMessage as Msg
 from utils import clip, scroll
 
 
-class SY1000(MidiDevice, Sequencer):
+class SY1000(MidiDevice):
     patch = 0
     dynasynths: "set[int]" = set()
 
@@ -13,19 +13,15 @@ class SY1000(MidiDevice, Sequencer):
 
     @property
     def select_message(self):
-        return lambda msg: msg.type in [
-            "program_change",
-            "sysex",
-            "start",
-            "stop",
-        ]
+        return lambda msg: msg.type in ["program_change", "sysex", "stop"]
 
     @property
     def external_message(self):
-        return lambda msg: msg.type in ["bars", "patch", "strings", "steps", "target"]
+        controls = ["patch", "strings", "steps", "target"]
+        return lambda msg: msg.type in controls
 
     @property
-    def strings(self):
+    def get_strings(self):
         for i in range(3):
             instr = 11 * i + 21
             # instr type + volume
@@ -33,17 +29,13 @@ class SY1000(MidiDevice, Sequencer):
             # instr strings volume + pan
             yield SysexReq("patch", [instr, 6, 0, 0, 0, 12])
 
-    def __init__(self, port):
-        super(SY1000, self).__init__(port)
-        self.subs = Sequencer._start_in(self)
-
     def _sysex_in(self, msg: SysexCmd):
         if msg.data[0] != 65 or msg.data[6] != 18:
             yield
         data = msg.data[7:]
         if data[0] == 0:  # "common" message
             self.patch = int("0x" + "".join(map(lambda a: hex(a)[2:], data[4:-1])), 16)
-            yield from self.strings
+            yield from self.get_strings
         elif data[0] == 16:  # "patch" message
             instr = data[2]
             if data[3] == 1:  # inst type, volume

@@ -2,13 +2,14 @@ import logging
 import numpy as np
 from sounddevice import Stream, query_devices
 from bridge import Bridge
-from midi import Sequencer
 from utils import t2i, retry
 
 
 class Recorder(Bridge):
     _playing = False
+    _playing_sync = False
     _recording = False
+    _recording_sync = False
     _bars = 2
 
     def __init__(self, name, phrases=16, channels=8, samplerate=48000.0):
@@ -30,14 +31,11 @@ class Recorder(Bridge):
             channels=(channels) * 2,
             callback=self.callback,
         )
-        self.subs = Sequencer._start.schedule_periodic(self._start_in)
-        logging.info(
-            "[AUD] Recording device %s at %i.Hz", self.name, int(self.samplerate)
-        )
+        logging.info("[AUD] Recording device %s at %i.Hz", self.name, self.samplerate)
 
     @property
     def external_message(self):
-        controls = ["play", "rec", "stop", "toggle", "bars"]
+        controls = ["start", "play", "rec", "stop", "toggle", "bars"]
         return lambda msg: super().external_message(msg) or msg.type in controls
 
     @property
@@ -56,11 +54,10 @@ class Recorder(Bridge):
 
     @playing.setter
     def playing(self, value: bool):
-        def wrapped(_, __):
-            self._playing = value
-            self._recording = False if value else self._recording
-
-        Sequencer._start.schedule(wrapped)
+        self._playing = value
+        self._playing_sync = self._playing
+        self._recording = False if value else self._recording
+        self._recording_sync = self._recording
 
     @property
     def recording(self):
@@ -68,11 +65,10 @@ class Recorder(Bridge):
 
     @recording.setter
     def recording(self, value: bool):
-        def wrapped(_, __):
-            self._recording = value
-            self._playing = False if value else self._playing
-
-        Sequencer._start.schedule(wrapped)
+        self._recording = value
+        self._recording_sync = self._recording
+        self._playing = False if value else self._playing
+        self._playing_sync = self._playing
 
     @property
     def bars(self):
@@ -132,24 +128,26 @@ class Recorder(Bridge):
 
     def _start_in(self, bars):
         self.bars = bars
-        self.current_frame = 0
         self._data.resize((16, self.maxsize, self.channels))
-        logging.info("[SD] %s %i chunk of data", self.state, self.maxsize)
+        self.playing = self._playing_sync
+        self.recording = self._recording_sync
+        logging.info("[AUD] %s %i chunk of data", self.state, self.maxsize)
+        self.current_frame = 0
 
     def _bars_in(self, values):
         self.bars = values
 
     def _play_in(self, _):
-        self.playing = True
+        self._playing_sync = True
 
     def _rec_in(self, _):
-        self.recording = True
+        self._recording_sync = True
 
     def _stop_in(self, _):
         self.playing = False
         self.recording = False
 
     def _toggle_in(self, _):
-        self.playing = not self.playing
-        if not self.playing:
-            self.recording = True
+        self._playing_sync = not self._playing_sync
+        if not self._playing_sync:
+            self._recording_sync = True

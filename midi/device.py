@@ -13,8 +13,7 @@ from bridge import Bridge
 
 class MidiDevice(Bridge):
     def __init__(self, port):
-        self.name: str = port[0:8]
-        super(MidiDevice, self).__init__(self.name)
+        super(MidiDevice, self).__init__(port[0:8])
         self.channel = 0
         self.inport: mido.ports.BaseInput = retry(mido.open_input, [port])  # type: ignore
         self.outport: mido.ports.BaseOutput = retry(mido.open_output, [port])  # type: ignore
