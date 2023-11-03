@@ -1,7 +1,5 @@
-import numpy as np
-from audioop import tostereo, tomono
-from audio import Recorder
-from utils import split, minmax, t2i, scroll
+from audio import Recorder, fade
+from utils import minmax, t2i, scroll
 
 
 class Mixer(Recorder):
@@ -40,13 +38,11 @@ class Mixer(Recorder):
 
     def _volume_in(self, values):
         track, value = values
-        copy = np.array(self.data[:, track], dtype=np.float32)
-        self.data[:, track] = np.multiply(copy, minmax(value / 127))
+        self.data[:, track] = fade(self.data[:, track], value / 127)
 
     def _xfade_in(self, values):
         track, value = values
-        stereo = tostereo(self.data[:, track], 4, *split(minmax(value / 127)))
-        self.data[:, track] = tomono(stereo, 4, *split(self.x))
+        self.data[:, track] = fade(self.data[:, track], value / 127, self.x)
 
     def _xfader_in(self, values):
         self.x = values
