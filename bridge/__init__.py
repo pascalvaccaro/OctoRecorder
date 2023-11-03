@@ -1,4 +1,3 @@
-import os
 import logging
 import threading
 import reactivex as rx
@@ -17,7 +16,7 @@ class Bridge(BehaviorSubject[InternalMessage]):
     _loop = EventLoopScheduler()
 
     def __init__(self, name):
-        super(Bridge, self).__init__(InternalMessage("init"))
+        super(Bridge, self).__init__(InternalMessage("init", name))
         self.name = name
 
     @property
@@ -78,8 +77,8 @@ class Bridge(BehaviorSubject[InternalMessage]):
 
     @doubleclick(0.4)
     def shutdown(self):
+        logging.info("[ALL] Shutting down")
         self.on_completed()
-        os.system("sudo shutdown now")
 
     def debug(self, msg):
         if msg is not None:
