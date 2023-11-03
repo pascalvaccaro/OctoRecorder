@@ -1,5 +1,7 @@
 import time
 import logging
+
+
 def minmax(n: float, smallest=0, largest=1):
     return max(smallest, min(n, largest))
 

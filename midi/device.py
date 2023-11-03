@@ -1,4 +1,3 @@
-import os
 import logging
 import mido
 from typing import Optional, Union
@@ -8,29 +7,25 @@ from reactivex.disposable import MultipleAssignmentDisposable, CompositeDisposab
 from reactivex.scheduler import CatchScheduler
 
 from midi.messages import clean_messages, InternalMessage, MidiMessage, ControlException
-from utils import doubleclick, retry
+from utils import retry
 from bridge import Bridge
-
-MIDO_BACKEND = os.environ.get("__MIDO_BACKEND__", "mido.backends.portmidi")
-mido.set_backend(MIDO_BACKEND, load=True)
-logging.info("[MID] Midi Backend started on %s", MIDO_BACKEND)
 
 
 class MidiDevice(Bridge):
-    @property
-    def is_closed(self):
-        return self.inport.closed
-
     def __init__(self, port):
         self.name: str = port[0:8]
         super(MidiDevice, self).__init__(self.name)
         self.channel = 0
         self.inport: mido.ports.BaseInput = retry(mido.open_input, [port])  # type: ignore
         self.outport: mido.ports.BaseOutput = retry(mido.open_output, [port])  # type: ignore
-        logging.info("[MID] %s connected via %s", self.name, MIDO_BACKEND)
+        logging.info("[MID] %s connected", self.name)
+
+    @property
+    def is_closed(self):
+        return self.inport.closed
 
     def __del__(self):
-        super(MidiDevice, self).__del__()
+        super().__del__()
         if self.inport is not None and not self.inport.closed:
             self.inport.close()
         if self.outport is not None and not self.outport.closed:
@@ -95,7 +90,3 @@ class MidiDevice(Bridge):
             logging.debug(*log)
         except Exception as e:
             logging.error("[OUT] %s %s", self.name, e)
-
-    @doubleclick(0.4)
-    def shutdown(self):
-        os.system("sudo shutdown now")

@@ -1,3 +1,4 @@
+import os
 import logging
 import threading
 import reactivex as rx
@@ -8,11 +9,16 @@ from reactivex.scheduler import EventLoopScheduler
 from reactivex.subject import BehaviorSubject
 from typing import Iterable, MutableSet
 from midi import InternalMessage
+from utils import doubleclick
 
 
 class Bridge(BehaviorSubject[InternalMessage]):
     _subs: MutableSet[DisposableBase] = set()
     _loop = EventLoopScheduler()
+
+    def __init__(self, name):
+        super(Bridge, self).__init__(InternalMessage("init"))
+        self.name = name
 
     @property
     def subs(self):
@@ -21,10 +27,6 @@ class Bridge(BehaviorSubject[InternalMessage]):
     @subs.setter
     def subs(self, sub):
         self._subs.add(sub)
-
-    def __init__(self, name):
-        super(Bridge, self).__init__(InternalMessage("init"))
-        self.name = name
 
     def __del__(self):
         for sub in self.subs:
@@ -73,6 +75,11 @@ class Bridge(BehaviorSubject[InternalMessage]):
                 ops.map(self.send),
             )
         )
+
+    @doubleclick(0.4)
+    def shutdown(self):
+        self.on_completed()
+        os.system("sudo shutdown now")
 
     def debug(self, msg):
         if msg is not None:
