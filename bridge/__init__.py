@@ -48,17 +48,10 @@ class Bridge(BehaviorSubject[InternalMessage]):
     @classmethod
     def start(cls, *devices: "Bridge"):
         stop_event = threading.Event()
-
-        def on_complete():
-            stop_event.set()
-
-        def on_error(e):
-            logging.error(e)
-
         for dev in devices:
             dev.subs = rx.merge(*(dev.attach(d) for d in devices)).subscribe(
-                on_error=on_error,
-                on_completed=on_complete,
+                on_error=logging.exception,
+                on_completed=stop_event.set,
                 scheduler=Bridge._loop,
             )
         logging.info("[ALL] Connected & started %i devices", len(devices))

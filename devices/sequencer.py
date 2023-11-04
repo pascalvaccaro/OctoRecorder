@@ -7,6 +7,8 @@ from utils import clip, t2i, scroll
 
 class Sequencer(Bridge):
     _bars = 2
+    _playing = False
+    _recording = False
 
     def __init__(self, device: MidiDevice):
         super().__init__("Sequencer")
@@ -15,7 +17,7 @@ class Sequencer(Bridge):
 
     @property
     def external_message(self):
-        return lambda msg: msg.type in ["bars"]
+        return lambda msg: msg.type in ["bars", "play", "rec", "stop", "toggle"]
 
     @property
     def bars(self):
@@ -24,6 +26,30 @@ class Sequencer(Bridge):
     @bars.setter
     def bars(self, value):
         self._bars = clip(t2i(value), 1, 8)
+
+    @property
+    def playing(self):
+        return self._playing
+
+    @playing.setter
+    def playing(self, value: bool):
+        self._playing = value
+        if value:
+            self._recording = False
+
+    @property
+    def recording(self):
+        return self._recording
+
+    @recording.setter
+    def recording(self, value: bool):
+        self._recording = value
+        if value:
+            self._playing = False
+
+    @property
+    def state(self):
+        return "Play" if self.playing else "Record" if self.recording else "Stream"
 
     @property
     def size(self):
@@ -48,7 +74,7 @@ class Sequencer(Bridge):
             ops.buffer_with_count(24),
             ops.merge(messages.pipe(ops.filter(self.is_start))),
             ops.scan(
-                lambda a, c: scroll(a + 1, 9, self.size - 1)
+                lambda a, c: scroll(a + 1, 0, self.size - 1)
                 if isinstance(c, list)
                 else 0,
                 -1,
@@ -60,8 +86,23 @@ class Sequencer(Bridge):
         self.bars = msg.data
 
     def _beat_in(self, beat):
-        yield Msg("beat", self.bars)
+        yield Msg("beat")
         if beat == 0:
-            yield Msg("start", self.bars)
+            yield Msg("start", self.state, self.bars)
         elif self.size - beat == 1:
             yield Msg("end", self.bars)
+
+    def _play_in(self, _):
+        self.playing = True
+
+    def _rec_in(self, _):
+        self.recording = True
+
+    def _stop_in(self, _):
+        self.playing = False
+        self.recording = False
+
+    def _toggle_in(self, _):
+        self.playing = not self.playing
+        if not self.playing:
+            self.recording = True

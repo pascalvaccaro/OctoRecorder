@@ -30,19 +30,20 @@ class Mixer(Recorder):
 
     @property
     def external_message(self):
-        controls = ["volume", "xfade", "xfader", "phrase"]
-        return lambda msg: super().external_message(msg) or msg.type in controls
+        params = ["volume", "xfade", "xfader", "phrase"]
+        super_external = super().external_message
+        return lambda msg: super_external(msg) or msg.type in params
 
-    def _phrase_in(self, values):
-        self.phrase = values
+    def _phrase_in(self, msg):
+        self.phrase = msg.data
 
-    def _volume_in(self, values):
-        track, value = values
+    def _volume_in(self, msg):
+        track, value = msg.data
         self.data[:, track] = fade(self.data[:, track], value / 127)
 
-    def _xfade_in(self, values):
-        track, value = values
+    def _xfade_in(self, msg):
+        track, value = msg.data
         self.data[:, track] = fade(self.data[:, track], value / 127, self.x)
 
-    def _xfader_in(self, values):
-        self.x = values
+    def _xfader_in(self, msg):
+        self.x = msg.data

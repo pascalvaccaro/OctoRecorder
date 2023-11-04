@@ -6,7 +6,7 @@ import mido
 
 class ClientSet(set):
     def __iter__(self) -> Iterator[mido.sockets.SocketPort]:
-        for client in super():
+        for client in super().__iter__():
             if client.closed:
                 logging.warn("%s disconnected", client.name)
                 self.remove(client)
@@ -18,8 +18,7 @@ HOSTNAME = os.environ.get("__HOST_NAME__", "localhost")
 
 class MidiServer(mido.sockets.PortServer):
     def __init__(self, portno=None):
-        if isinstance(portno, int):
-            super().__init__(HOSTNAME, portno)
+        super().__init__(HOSTNAME, portno)
         self.clients = ClientSet()
         logging.info("[NET] Started midi server on %s:%i", HOSTNAME, portno)
 
