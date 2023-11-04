@@ -56,28 +56,19 @@ class Recorder(Bridge):
         if status:
             logging.warn(status)
         try:
-            outdata[:] = indata.copy()
-            if self.state == "Record":
-                cursor = min(len(self.data), self.current_frame + frames)
-                self.data[self.current_frame : cursor] = indata
-                if cursor >= len(self.data):
-                    self.data[:cursor] = [0] * 8
-                    self.current_frame = 0
-                else:
-                    self.current_frame += cursor
-            elif self.state == "Play":
-                chunksize = min(len(self.data) - self.current_frame, frames)
-                outdata[:chunksize] = self.data[
-                    self.current_frame : self.current_frame + chunksize,
-                ]
-                if chunksize < frames:
-                    outdata[:chunksize] = 0
-                    self.current_frame = 0
-                else:
-                    self.current_frame += chunksize
+            remainder = len(self.data) - self.cursor
+            if remainder <= 0:
+                raise CallbackStop
+            outdata[:] = indata[:remainder]
+            offset = frames if remainder >= frames else remainder
+            if "Play" in self.state:
+                outdata[:offset] = self.data[self.cursor : self.cursor + offset]
+                outdata[offset:] = 0
+            if "Record" in self.state:
+                self.data[self.cursor : self.cursor + offset] = outdata
+            self.cursor += offset
         except Exception as e:
             logging.exception(e)
-            raise CallbackStop(e)
 
     def _start_in(self, msg):
         self.stream.stop()
@@ -85,9 +76,11 @@ class Recorder(Bridge):
         # '6' is 4 * 60 seconds / 40 BPM (min tempo sets the largest size)
         maxsize = int(self.samplerate * bars * 6)
         self._data.resize((len(self._data), maxsize, self.channels))
-        self.current_frame = 0
+        self.cursor = 0
         self.stream.start()
-        logging.info("[AUD] %sing %i bars sample (%i chunks)", self.state, bars, maxsize)
+        logging.info(
+            "[AUD] %sing %i bars sample (%i chunks)", self.state, bars, maxsize
+        )
 
     def _stop_in(self, _):
         self.stream.stop()
