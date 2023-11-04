@@ -1,6 +1,6 @@
 from reactivex import from_iterable, operators as ops
 from reactivex.scheduler import EventLoopScheduler
-from midi import InternalMessage as Msg
+from midi import InternalMessage as Msg, MidiDevice
 from bridge import Bridge
 from utils import clip, t2i, scroll
 
@@ -8,9 +8,10 @@ from utils import clip, t2i, scroll
 class Sequencer(Bridge):
     _bars = 2
 
-    def __init__(self, inport):
+    def __init__(self, device: MidiDevice):
         super().__init__("Sequencer")
-        self.inport = inport
+        self.inport = device.inport
+        self.server = device.server
 
     @property
     def external_message(self):
@@ -43,6 +44,7 @@ class Sequencer(Bridge):
         )
         # now the clock can run on the same thread as other devices
         return clock.pipe(
+            ops.do_action(self.server.send),
             ops.buffer_with_count(24),
             ops.merge(messages.pipe(ops.filter(self.is_start))),
             ops.scan(

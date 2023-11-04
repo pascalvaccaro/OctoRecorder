@@ -7,16 +7,18 @@ from reactivex.disposable import MultipleAssignmentDisposable, CompositeDisposab
 from reactivex.scheduler import CatchScheduler
 
 from midi.messages import clean_messages, InternalMessage, MidiMessage, ControlException
+from midi.server import MidiServer
 from utils import retry
 from bridge import Bridge
 
 
 class MidiDevice(Bridge):
-    def __init__(self, port):
-        super(MidiDevice, self).__init__(port[0:8])
+    def __init__(self, name, port=None):
+        super(MidiDevice, self).__init__(name[0:8])
         self.channel = 0
-        self.inport: mido.ports.BaseInput = retry(mido.open_input, [port])  # type: ignore
-        self.outport: mido.ports.BaseOutput = retry(mido.open_output, [port])  # type: ignore
+        self.inport: mido.ports.BaseInput = retry(mido.open_input, [name])  # type: ignore
+        self.outport: mido.ports.BaseOutput = retry(mido.open_output, [name])  # type: ignore
+        self.server = MidiServer(port)
         logging.info("[MID] %s connected", self.name)
 
     @property
@@ -42,7 +44,7 @@ class MidiDevice(Bridge):
             return True
 
         def scheduled_action(sched, state=None):
-            if state is None:
+            if not isinstance(state, MultipleAssignmentDisposable):
                 state = MultipleAssignmentDisposable()
             if self.is_closed:
                 final.on_completed()
@@ -51,17 +53,24 @@ class MidiDevice(Bridge):
 
             proxy = Observer(self.send, final.on_error)
             disp = CompositeDisposable(state.disposable)
-            messages = [m for m in self.inport.iter_pending() if self.select_message(m)]
+            midi_in = [m for m in self.inport.iter_pending() if m.type != "clock"]
+            (self.server.send(msg) for msg in midi_in)
+            client_in = []
+            for port in self.server:
+                client_in += [m for m in port.iter_pending()]
+            all_messages: "list[MidiMessage]" = [*midi_in, *client_in]
+            messages = [m for m in all_messages if self.select_message(m)]
 
             while len(messages) > 0:
-                item: Union[MidiMessage, InternalMessage] = messages.pop()
-                self.debug(item)
+                item = messages.pop()
                 disp.add(self.to_messages(item).subscribe(proxy, scheduler=sched))
                 try:
                     messages = clean_messages(item, messages)
                 except ControlException as e:
                     self.channel = e.channel
                     messages.clear()
+                finally:
+                    self.debug(item)
 
             if isinstance(sched, SchedulerBase):
                 disp.add(sched.schedule_relative(0.12, scheduled_action, state))

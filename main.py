@@ -23,10 +23,10 @@ if __name__ == "__main__":
     try:
         mido.set_backend(MIDO_BACKEND, load=True)
         logging.info("[MID] Midi Backend started on %s", MIDO_BACKEND)
-        control = APC40(CONTROL_DEVICE_NAME)
-        synth = SY1000(SYNTH_DEVICE_NAME)
+        control = APC40(CONTROL_DEVICE_NAME, 8080)
+        synth = SY1000(SYNTH_DEVICE_NAME, 8081)
         audio = Mixer(AUDIO_DEVICE_NAME, 16, 8)
-        sequencer = Sequencer(synth.inport)
+        sequencer = Sequencer(synth)
         Bridge.start(control, synth, audio, sequencer).wait()
     except KeyboardInterrupt:
         logging.info("[ALL] Stopped by user")
