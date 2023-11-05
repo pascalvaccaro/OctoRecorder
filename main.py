@@ -17,7 +17,6 @@ logging.basicConfig(
 )
 
 from devices import APC40, SY1000, Mixer, Sequencer
-from bridge import Bridge
 
 if __name__ == "__main__":
     try:
@@ -26,7 +25,6 @@ if __name__ == "__main__":
         control = APC40(CONTROL_DEVICE_NAME, 8080)
         synth = SY1000(SYNTH_DEVICE_NAME, 8081)
         audio = Mixer(AUDIO_DEVICE_NAME, 16, 8)
-        sequencer = Sequencer(synth)
-        Bridge.start(control, synth, audio, sequencer).wait()
+        Sequencer(synth).start(control, synth, audio).wait()
     except KeyboardInterrupt:
         logging.info("[ALL] Stopped by user")

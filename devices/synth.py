@@ -81,7 +81,7 @@ class SY1000(MidiDevice):
             if control == 17 or control == 21
             else 18
         )
-        string = channel + (6 if control < 20 else 12)
+        string = channel + 6 * (1 + control <= 19)
         value = clip(value / 127 * 100)
 
         if channel < 8:

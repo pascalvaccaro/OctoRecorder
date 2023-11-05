@@ -1,10 +1,8 @@
 import logging
-import threading
 import reactivex as rx
 import reactivex.operators as ops
 from reactivex.abc import DisposableBase
 from reactivex.disposable import SingleAssignmentDisposable
-from reactivex.scheduler import EventLoopScheduler
 from reactivex.subject import BehaviorSubject
 from typing import Iterable, MutableSet
 from midi import InternalMessage
@@ -13,7 +11,6 @@ from utils import doubleclick
 
 class Bridge(BehaviorSubject[InternalMessage]):
     _subs: MutableSet[DisposableBase] = set()
-    _loop = EventLoopScheduler()
 
     def __init__(self, name):
         super(Bridge, self).__init__(InternalMessage("init", name))
@@ -44,18 +41,6 @@ class Bridge(BehaviorSubject[InternalMessage]):
         if messages is not None:
             return rx.of(messages)
         return rx.never()
-
-    @classmethod
-    def start(cls, *devices: "Bridge"):
-        stop_event = threading.Event()
-        for dev in devices:
-            dev.subs = rx.merge(*(dev.attach(d) for d in devices)).subscribe(
-                on_error=logging.exception,
-                on_completed=stop_event.set,
-                scheduler=Bridge._loop,
-            )
-        logging.info("[ALL] Connected & started %i devices", len(devices))
-        return stop_event
 
     def attach(self, device: "Bridge"):
         return (

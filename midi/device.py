@@ -1,24 +1,27 @@
 import logging
 import mido
-from typing import Optional, Union
 from reactivex import from_iterable, Observer
 from reactivex.abc import SchedulerBase, ObserverBase
 from reactivex.disposable import MultipleAssignmentDisposable, CompositeDisposable
-from reactivex.scheduler import CatchScheduler
 
+from bridge import Bridge
 from midi.messages import clean_messages, InternalMessage, MidiMessage, ControlException
 from midi.server import MidiServer
 from utils import retry
-from bridge import Bridge
 
 
 class MidiDevice(Bridge):
-    def __init__(self, name, port=None):
-        super(MidiDevice, self).__init__(name[0:8])
+    def __init__(self, port, portno=None):
+        super(MidiDevice, self).__init__(port[0:8])
         self.channel = 0
-        self.inport: mido.ports.BaseInput = retry(mido.open_input, [name])  # type: ignore
-        self.outport: mido.ports.BaseOutput = retry(mido.open_output, [name])  # type: ignore
-        self.server = MidiServer(port)
+        self.server = MidiServer(portno)
+        if isinstance(port, str):
+            self.inport: mido.ports.BaseInput = retry(mido.open_input, [port])  # type: ignore
+            self.outport: mido.ports.BaseOutput = retry(mido.open_output, [port])  # type: ignore
+        elif isinstance(port, "MidiDevice"):
+            self.inport = port.inport
+            self.outport = port.outport
+            self.server = self.server or port.server
         logging.info("[MID] %s connected", self.name)
 
     @property
@@ -34,26 +37,27 @@ class MidiDevice(Bridge):
 
     def subscriber(
         self,
-        final: ObserverBase[Union[InternalMessage, MidiMessage]],
-        scheduler: Optional[SchedulerBase] = None,
+        final: ObserverBase,
+        scheduler: SchedulerBase,
     ):
         disp = MultipleAssignmentDisposable()
+        disp.disposable = from_iterable(self.init_actions).subscribe(
+            self.send, scheduler=scheduler
+        )
 
-        def on_error(e):
-            final.on_error(e)
-            return True
-
-        def scheduled_action(sched, state=None):
-            if not isinstance(state, MultipleAssignmentDisposable):
-                state = MultipleAssignmentDisposable()
+        def scheduled_action(sched, state=[]):
             if self.is_closed:
                 final.on_completed()
-                state.dispose()
-                return state
+                disp.dispose()
+                return disp
 
             proxy = Observer(self.send, final.on_error)
-            disp = CompositeDisposable(state.disposable)
-            midi_in = [m for m in self.inport.iter_pending() if m.type != "clock"]
+            cdisp = CompositeDisposable(disp.disposable)
+            midi_in = [
+                m
+                for m in self.inport.iter_pending()
+                if m.type not in ["clock", "start"]
+            ]
             (self.server.send(msg) for msg in midi_in)
             client_in = []
             for port in self.server:
@@ -63,7 +67,8 @@ class MidiDevice(Bridge):
 
             while len(messages) > 0:
                 item = messages.pop()
-                disp.add(self.to_messages(item).subscribe(proxy, scheduler=sched))
+                if item.bytes() != state:
+                    cdisp.add(self.to_messages(item).subscribe(proxy))
                 try:
                     messages = clean_messages(item, messages)
                 except ControlException as e:
@@ -71,16 +76,13 @@ class MidiDevice(Bridge):
                     messages.clear()
                 finally:
                     self.debug(item)
+                    state = item.bytes()
 
-            if isinstance(sched, SchedulerBase):
-                disp.add(sched.schedule_relative(0.12, scheduled_action, state))
+            cdisp.add(sched.schedule_relative(0.01, scheduled_action, state))
+            disp.disposable = cdisp
+            return disp
 
-            state.disposable = disp
-            return state
-
-        sched = CatchScheduler(scheduler or self._loop, on_error)
-        disp.disposable = from_iterable(self.init_actions, sched).subscribe(self.send)
-        return scheduled_action(sched, disp)
+        return scheduled_action(scheduler, disp)
 
     def send(self, msg):
         if msg is None:

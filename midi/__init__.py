@@ -8,7 +8,8 @@ from midi.messages import (
     MidiMessage,
 )
 from midi.device import MidiDevice
-from reactivex import merge, of, timer, operators as ops
+from reactivex import Observable, merge, of, timer, operators as ops
+from reactivex.scheduler import CurrentThreadScheduler
 
 
 def make_note(channel, note: int):
@@ -16,5 +17,14 @@ def make_note(channel, note: int):
         ops.map(lambda vel: MidiNote(channel, note, vel)),
     )
 
+
 def make_notes(channel, notes):
     return merge(*map(lambda note: make_note(channel, note), notes))
+
+
+class MidiScheduler(Observable, CurrentThreadScheduler):
+    def schedule(self, action, state=None):
+        def on_next(_):
+            super(MidiScheduler, self).schedule(action, state)
+
+        return self.subscribe(on_next)

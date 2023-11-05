@@ -42,6 +42,9 @@ def checksum(addr, body=[]):
 class MidiMessage(mido.messages.Message):
     type: str
 
+    def bytes(self):
+        return super().bytes()
+
 
 class Sysex(MidiMessage):
     data: "list[int]"
@@ -100,3 +103,6 @@ class InternalMessage(object):
 
     def is_cc(self):
         return False
+    
+    def bytes(self):
+        return list(self.data)
