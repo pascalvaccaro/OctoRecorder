@@ -47,7 +47,13 @@ class Sequencer(MidiDevice):
 
     @property
     def state(self):
-        return "Play" if self.playing else "Record" if self.recording else "Stream"
+        state = []
+        if self.playing:
+            state += "Play"
+        if self.recording:
+            state += "Record"
+        state += "Stream"
+        return state
 
     @property
     def size(self):

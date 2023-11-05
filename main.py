@@ -16,7 +16,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-from devices import APC40, SY1000, Mixer, Sequencer
+from devices import APC40, SY1000, Recorder, Sequencer
 
 if __name__ == "__main__":
     try:
@@ -24,7 +24,7 @@ if __name__ == "__main__":
         logging.info("[MID] Midi Backend started on %s", MIDO_BACKEND)
         control = APC40(CONTROL_DEVICE_NAME, 8080)
         synth = SY1000(SYNTH_DEVICE_NAME, 8081)
-        audio = Mixer(AUDIO_DEVICE_NAME, 16, 8)
+        audio = Recorder(AUDIO_DEVICE_NAME, 16, 8)
         Sequencer(synth).start(control, synth, audio).wait()
     except KeyboardInterrupt:
         logging.info("[ALL] Stopped by user")

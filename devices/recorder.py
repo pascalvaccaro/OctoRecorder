@@ -1,11 +1,13 @@
 import logging
 import numpy as np
-from sounddevice import Stream, query_devices, CallbackStop
-from bridge import Bridge
-from utils import t2i, retry
+from sounddevice import CallbackStop, query_devices
+from audio import Stream, Mixer
+from utils import t2i, retry, scroll
 
 
-class Recorder(Bridge):
+class Recorder(Mixer):
+    _phrase = 0
+
     def __init__(self, name, phrases=16, channels=8, samplerate=48000.0):
         device = retry(query_devices, [name])
         if isinstance(device, dict):
@@ -20,6 +22,7 @@ class Recorder(Bridge):
         super(Recorder, self).__init__(name)
         self._data = np.zeros((phrases, 576000, channels), dtype=np.float32)
         self.stream = Stream(
+            faders=self.faders,
             device=self.device.get("name"),
             samplerate=self.samplerate,
             channels=self.channels,
@@ -32,7 +35,9 @@ class Recorder(Bridge):
 
     @property
     def external_message(self):
-        return lambda msg: msg.type in ["start", "stop"]
+        params = ["start", "stop", "phrase"]
+        super_external = super().external_message
+        return lambda msg: super_external(msg) or msg.type in params
 
     @property
     def samplerate(self):
@@ -45,8 +50,18 @@ class Recorder(Bridge):
         return min(input_channels, output_channels)
 
     @property
+    def phrase(self):
+        return self._phrase
+
+    @phrase.setter
+    def phrase(self, values):
+        phrase = self._phrase + t2i(values)
+        max_phrase = len(self._data) - 1
+        self._phrase = scroll(phrase, 0, max_phrase)
+
+    @property
     def data(self):
-        return self._data
+        return self._data[self.phrase]
 
     @property
     def is_closed(self):
@@ -59,13 +74,14 @@ class Recorder(Bridge):
             remainder = len(self.data) - self.cursor
             if remainder <= 0:
                 raise CallbackStop
-            outdata[:] = indata[:remainder]
             offset = frames if remainder >= frames else remainder
+            if "Record" in self.state:
+                self.data[self.cursor : self.cursor + offset] = indata
             if "Play" in self.state:
                 outdata[:offset] = self.data[self.cursor : self.cursor + offset]
                 outdata[offset:] = 0
-            if "Record" in self.state:
-                self.data[self.cursor : self.cursor + offset] = outdata
+            elif "Stream" in self.state:
+                outdata[:] = indata
             self.cursor += offset
         except Exception as e:
             logging.exception(e)
@@ -79,8 +95,14 @@ class Recorder(Bridge):
         self.cursor = 0
         self.stream.start()
         logging.info(
-            "[AUD] %sing %i bars sample (%i chunks)", self.state, bars, maxsize
+            "[AUD] %sing %i bars sample (%i chunks)",
+            "ing/".join(self.state),
+            bars,
+            maxsize,
         )
+
+    def _phrase_in(self, msg):
+        self.phrase = msg.data
 
     def _stop_in(self, _):
         self.stream.stop()
