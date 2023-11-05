@@ -1,5 +1,8 @@
+from numpy import frombuffer, float32
+from numpy.typing import NDArray
+from audioop import add, mul, tostereo, tomono
 from bridge import Bridge
-from utils import minmax, t2i
+from utils import minmax, split, t2i
 
 
 class Mixer(Bridge):
@@ -26,6 +29,18 @@ class Mixer(Bridge):
     @property
     def external_message(self):
         return lambda msg: msg.type in ["volume", "xfade", "xfader"]
+
+    def master_out(self, *args: NDArray[float32]):
+        indata, outdata = args
+        faders, big_x = self.faders
+        for ch, values in enumerate(faders):
+            track_in = indata[:, ch].tobytes()
+            vol, x = values
+            stereo = tostereo(outdata[:, ch].tobytes(), 4, *split(x))
+            mono = tomono(stereo, 4, *split(big_x))
+            track_out = mul(mono, 4, vol)
+            outdata[:, ch] = frombuffer(add(track_in, track_out, 4), dtype=float32)
+        return outdata
 
     def _volume_in(self, msg):
         self.faders = [0, *msg.data]

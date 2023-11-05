@@ -12,10 +12,18 @@ class Sequencer(MidiDevice):
     _bars = 2
     _playing = False
     _recording = False
+    _overdub = False
 
     @property
     def external_message(self):
-        return lambda msg: msg.type in ["bars", "play", "rec", "stop", "toggle"]
+        return lambda msg: msg.type in [
+            "bars",
+            "play",
+            "rec",
+            "stop",
+            "toggle",
+            "overdub",
+        ]
 
     @property
     def bars(self):
@@ -32,7 +40,7 @@ class Sequencer(MidiDevice):
     @playing.setter
     def playing(self, value: bool):
         self._playing = value
-        if value:
+        if value and not self.overdub:
             self._recording = False
 
     @property
@@ -42,8 +50,18 @@ class Sequencer(MidiDevice):
     @recording.setter
     def recording(self, value: bool):
         self._recording = value
-        if value:
+        if value and not self.overdub:
             self._playing = False
+
+    @property
+    def overdub(self):
+        return self._overdub
+
+    @overdub.setter
+    def overdub(self, value: bool):
+        self._overdub = value
+        self.recording = value
+        self.playing = value or True
 
     @property
     def state(self):
@@ -52,7 +70,8 @@ class Sequencer(MidiDevice):
             state += "Play"
         if self.recording:
             state += "Record"
-        state += "Stream"
+        if not self.overdub:
+            state += "Stream"
         return state
 
     @property
@@ -119,7 +138,11 @@ class Sequencer(MidiDevice):
         self.playing = False
         self.recording = False
 
+    def _overdub_in(self, msg):
+        self.overdub = msg.data[0]
+
     def _toggle_in(self, _):
+        self.overdub = False
         self.playing = not self.playing
         if not self.playing:
             self.recording = True

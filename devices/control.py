@@ -86,6 +86,13 @@ class APC40(MidiDevice):
                 steps = map(lambda x: x * 100, [*self.steps[5], *self.steps[0]])
                 param = 2
             yield Msg("steps", param, list(steps))
+        elif note == 64:
+            isintarget = note in self.targets
+            if isintarget:
+                self.targets.remove(note)
+            else:
+                self.targets.add(note)
+            yield Msg("overdub", not isintarget)
         elif note in range(81, 87):
             param = 0 if note in [82, 83] else 1 if note in [84, 85] else 2
             if note in self.targets:
@@ -156,6 +163,9 @@ class APC40(MidiDevice):
                     else note + (1 if note % 2 == 1 else -1)
                 )
                 yield MidiNote(0, opposite, 0)
+        elif note == 64:
+            if note in self.targets:
+                yield MidiNote(self.channel, note)
         yield from self._note_in(msg)
 
     def _strings_in(self, msg: Msg):
