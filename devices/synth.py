@@ -8,8 +8,9 @@ class SY1000(MidiDevice):
 
     @property
     def init_actions(self):
-        # patch number
-        yield SysexReq("common", [0, 0, 0, 0, 0, 4])
+        yield from self._program_change_in()
+        # Stereo Link (Main = ON, Sub = OFF)
+        yield SysexCmd("inout", [0, 52, 1, 0])
         # L/R output levels
         yield from self._xfader_in(Msg("xfader", 64))
 
@@ -62,8 +63,9 @@ class SY1000(MidiDevice):
                     max_values = (s for i, s in param_steps if i % 2 == 1)
                     yield Msg(param, targets[i], max_values)
 
-    def _program_change_in(self, _):
-        yield from self.init_actions
+    def _program_change_in(self, _=None):
+        # patch number
+        yield SysexReq("common", [0, 0, 0, 0, 0, 4])
 
     def _stop_in(self, _=None):
         yield Msg("stop", 0)
@@ -83,10 +85,10 @@ class SY1000(MidiDevice):
             if control == 17 or control == 21
             else 18
         )
-        string = channel + 6 * (1 + control <= 19)
+        string = channel + (6 if control <= 19 else 12)
         value = clip(value / 127 * 100)
 
-        if channel < 8:
+        if channel < 6:
             yield SysexCmd("patch", [instr, string, value])
         elif channel == 8:
             all_values = [value] * 6

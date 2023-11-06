@@ -12,7 +12,7 @@ class Recorder(Bridge, Stream):
     _data = zeros((16, 576000, 8), dtype=float32)
 
     def __init__(self, name, phrases=16, channels=8, samplerate=48000.0):
-        super(Recorder, self).__init__(name)
+        super(Recorder, self).__init__("[AUD] " + name)
         device = retry(query_devices, [name])
         if not isinstance(device, dict):
             device = dict()
@@ -25,7 +25,7 @@ class Recorder(Bridge, Stream):
             dtype=float32,
             callback=self.play_rec,
         )
-        logging.info("[AUD] Recording device %s at %i.Hz", self.name, self.samplerate)
+        logging.info("%s recording at %i.Hz", self.name, self.samplerate)
 
     def __del__(self):
         self.close()
@@ -78,19 +78,18 @@ class Recorder(Bridge, Stream):
             for ch, vol in enumerate(self.volumes):
                 track_in = indata[:, ch].tobytes()
                 track_out = mul(buffer[:, ch].tobytes(), 4, vol)
-                outdata[:, ch] = frombuffer(add(track_in, track_out, 4), dtype=float32)
+                outdata[:offset, ch] = frombuffer(add(track_in, track_out, 4), dtype=float32)
+            outdata[offset:] = 0
             self.cursor += offset
         except Exception as e:
             logging.exception(e)
 
     def _start_in(self, msg):
-        self.stop()
         self.state, bars = msg.data
         # '6' is 4 * 60 seconds / 40 BPM (min tempo sets the largest size)
         maxsize = int(self.samplerate * bars * 6)
         self._data.resize((len(self._data), maxsize, self.channels[0]))
         self.cursor = 0
-        self.start()
         logging.info(
             "[AUD] %sing %i bars sample (%i chunks)",
             "ing/".join(self.state),

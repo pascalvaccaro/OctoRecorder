@@ -9,7 +9,7 @@ from midi.messages import (
 )
 from midi.device import MidiDevice
 from reactivex import Observable, merge, of, timer, operators as ops
-from reactivex.scheduler import CurrentThreadScheduler
+from reactivex.scheduler import EventLoopScheduler
 
 
 def make_note(channel, note: int):
@@ -22,7 +22,7 @@ def make_notes(channel, notes):
     return merge(*map(lambda note: make_note(channel, note), notes))
 
 
-class MidiScheduler(Observable, CurrentThreadScheduler):
+class MidiScheduler(Observable, EventLoopScheduler):
     def schedule(self, action, state=None):
         def on_next(_):
             super(MidiScheduler, self).schedule(action, state)

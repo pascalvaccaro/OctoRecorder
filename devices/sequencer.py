@@ -2,9 +2,11 @@ import logging
 import threading
 import reactivex as rx
 import reactivex.operators as ops
+from reactivex.abc import ObserverBase, SchedulerBase
 from reactivex.scheduler import EventLoopScheduler, CatchScheduler
+from typing import Optional
 from bridge import Bridge
-from midi import InternalMessage as Msg, MidiDevice, MidiScheduler
+from midi import InternalMessage as Msg, MidiDevice
 from utils import clip, t2i, scroll
 
 
@@ -13,6 +15,14 @@ class Sequencer(MidiDevice):
     _playing = False
     _recording = False
     _overdub = False
+
+    def __init__(self, device):
+        super().__init__(device)
+        self.name = "[SEQ] Sequencer"
+
+    @property
+    def select_message(self):
+        return lambda msg: msg.type in ["clock", "start"]
 
     @property
     def external_message(self):
@@ -61,51 +71,45 @@ class Sequencer(MidiDevice):
     def state(self):
         state = []
         if self.playing:
-            state += "Play"
+            state += ["Play"]
         if self.recording:
-            state += "Record"
+            state += ["Record"]
         if not self.overdub:
-            state += "Stream"
+            state += ["Stream"]
         return state
 
     @property
     def size(self):
         return self.bars * 4 * 24
 
-    def subscriber(self, observer, _):
-        def clocker(acc, c):
-            return c if isinstance(c, int) else scroll(acc + 1, 0, self.size - 1)
+    def subscriber(self, observer, scheduler):
+        def clocker(acc, msg):
+            return 0 if msg.type == "start" else scroll(acc + 1, 0, self.size - 1)
 
-        clock = self.clock if hasattr(self, "clock") else rx.interval(1000 / 24)
-        return clock.pipe(
-            ops.scan(clocker, -1),
-            ops.flat_map(self._beat_in),
-        ).subscribe(observer)
+        # inport iterable is blocking code, need to use a dedicated thread for a nice sync
+        return (
+            rx.from_iterable(self.inport, EventLoopScheduler()).pipe(
+                ops.filter(self.select_message),
+                ops.do_action(self.server.send),
+                ops.scan(clocker, -1),
+                ops.flat_map(self._beat_in),
+            )
+            # now the clock can run the common thread
+            .subscribe(observer, scheduler=scheduler)
+        )
 
     def start(self, *devices: Bridge):
         def on_error(e):
             return logging.exception(e) or True
 
-        def subscriber(observer, _):
-            def on_next(msg):
-                if msg.type in ["clock", "start"]:
-                    self.server.send(msg)
-                    observer.on_next(0 if msg.type == "start" else None)
-
-            # inport iterable is blocking code, need to use a dedicated thread for a nice sync
-            return rx.from_iterable(self.inport, EventLoopScheduler()).subscribe(
-                on_next, logging.exception, stop_event.set
-            )
-
-        # now the clock can run the common thread
-        self.clock = MidiScheduler(subscriber)
         stop_event = threading.Event()
-        for dev in (self, *devices):
-            dev.subs = rx.merge(*[dev.attach(d) for d in devices]).subscribe(
-                on_completed=stop_event.set,
-                scheduler=CatchScheduler(self.clock, on_error),
+        all_devices = (self, *devices)
+        scheduler = CatchScheduler(EventLoopScheduler(), on_error)
+        for dev in all_devices:
+            dev.subs = rx.merge(*[dev.attach(d) for d in all_devices]).subscribe(
+                on_next=dev.send, on_completed=stop_event.set, scheduler=scheduler
             )
-        logging.info("[SEQ] %i devices synced", len(devices))
+        logging.info("%s syncing %i devices", self.name, len(devices))
         return stop_event
 
     def _beat_in(self, beat):

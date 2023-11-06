@@ -12,17 +12,19 @@ from utils import retry
 
 class MidiDevice(Bridge):
     def __init__(self, port, portno=None):
-        super(MidiDevice, self).__init__(port[0:8])
         self.channel = 0
-        self.server = MidiServer(portno)
         if isinstance(port, str):
+            super(MidiDevice, self).__init__("[MID] " + port[0:-7])
             self.inport: mido.ports.BaseInput = retry(mido.open_input, [port])  # type: ignore
             self.outport: mido.ports.BaseOutput = retry(mido.open_output, [port])  # type: ignore
-        elif isinstance(port, "MidiDevice"):
+            if isinstance(portno, int):
+                self.server = MidiServer(portno)
+            logging.info("%s connected", self.name)
+        elif isinstance(port, MidiDevice):
+            super(MidiDevice, self).__init__(port.name)
             self.inport = port.inport
             self.outport = port.outport
-            self.server = self.server or port.server
-        logging.info("[MID] %s connected", self.name)
+            self.server = port.server
 
     @property
     def is_closed(self):
@@ -41,11 +43,9 @@ class MidiDevice(Bridge):
         scheduler: SchedulerBase,
     ):
         disp = MultipleAssignmentDisposable()
-        disp.disposable = from_iterable(self.init_actions).subscribe(
-            self.send, scheduler=scheduler
-        )
+        disp.disposable = from_iterable(self.init_actions).subscribe(self.send)
 
-        def scheduled_action(sched, state=[]):
+        def action(sched: SchedulerBase, state=[]):
             if self.is_closed:
                 final.on_completed()
                 disp.dispose()
@@ -78,11 +78,11 @@ class MidiDevice(Bridge):
                     self.debug(item)
                     state = item.bytes()
 
-            cdisp.add(sched.schedule_relative(0.01, scheduled_action, state))
+            cdisp.add(sched.schedule_relative(0.01, action, state))
             disp.disposable = cdisp
             return disp
 
-        return scheduled_action(scheduler, disp)
+        return action(scheduler, disp)
 
     def send(self, msg):
         if msg is None:
@@ -90,13 +90,13 @@ class MidiDevice(Bridge):
         try:
             if isinstance(msg, tuple):
                 msg = msg[0]
-            log = [msg.type.capitalize(), self.name, msg.dict()]
+            log = [self.name, msg.type.capitalize(), msg.dict()]
             if isinstance(msg, InternalMessage):
                 self.on_next(msg)
-                log.insert(0, "[SUB] %s message through %s: %s")
+                log.insert(0, "%s %s message THRU: %s")
             elif isinstance(msg, MidiMessage):
                 self.outport.send(msg)
-                log.insert(0, "[OUT] %s message to %s: %s")
+                log.insert(0, "%s %s message OUT: %s")
             logging.debug(*log)
         except Exception as e:
-            logging.error("[OUT] %s %s", self.name, e)
+            logging.error("%s error OUT %s", self.name, e)

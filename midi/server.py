@@ -18,9 +18,10 @@ HOSTNAME = os.environ.get("__HOST_NAME__", "localhost")
 
 class MidiServer(mido.sockets.PortServer):
     def __init__(self, portno=None):
-        super().__init__(HOSTNAME, portno)
+        if portno is not None:
+            super().__init__(HOSTNAME, portno)
+            logging.info("[NET] Started midi server on %s:%i", HOSTNAME, portno)
         self.clients = ClientSet()
-        logging.info("[NET] Started midi server on %s:%i", HOSTNAME, portno)
 
     def __iter__(self):
         new_client = self.accept(block=False)
