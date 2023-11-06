@@ -4,7 +4,7 @@ import logging
 SYNTH_SYSEX_HEAD = [65, 0, 0, 0, 0, 105]
 SYNTH_SYSEX_REQ = [*SYNTH_SYSEX_HEAD, 17]
 SYNTH_SYSEX_CMD = [*SYNTH_SYSEX_HEAD, 18]
-SYNTH_ADDRESSES = {"common": [0, 1], "patch": [16, 0]}
+SYNTH_ADDRESSES = {"common": [0, 1], "patch": [16, 0], "inout": [0, 4]}
 
 CONTROL_FORBIDDEN_CC = range(16, 24)
 CONTROL_FORBIDDEN_CHECKSUM = sum(CONTROL_FORBIDDEN_CC)

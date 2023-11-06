@@ -1,5 +1,5 @@
 from midi import MidiDevice, SysexCmd, SysexReq, InternalMessage as Msg
-from utils import clip, scroll
+from utils import clip, scroll, split_hex
 
 
 class SY1000(MidiDevice):
@@ -10,6 +10,8 @@ class SY1000(MidiDevice):
     def init_actions(self):
         # patch number
         yield SysexReq("common", [0, 0, 0, 0, 0, 4])
+        # L/R output levels
+        yield from self._xfader_in(Msg("xfader", 64))
 
     @property
     def select_message(self):
@@ -17,7 +19,7 @@ class SY1000(MidiDevice):
 
     @property
     def external_message(self):
-        controls = ["patch", "strings", "steps", "target"]
+        controls = ["patch", "strings", "steps", "target", "xfader"]
         return lambda msg: msg.type in controls
 
     @property
@@ -108,3 +110,8 @@ class SY1000(MidiDevice):
         if param >= 0:
             for instr in self.dynasynths:
                 yield SysexCmd("patch", [instr, 59 + param, target])
+
+    def _xfader_in(self, msg: Msg):
+        left = clip(int(msg.data[0] / 127 * 200), 0, 200)
+        data = [*split_hex(left), *split_hex(200 - left)]
+        yield SysexCmd("inout", [0, 44, *data])

@@ -26,6 +26,9 @@ def scroll(n: int, smallest=0, largest=127):
 def t2i(values):
     return values[0] if isinstance(values, tuple) else values
 
+def split_hex(val: int):
+    return [int(h, 16) for h in hex(val)[2:]]
+
 
 def doubleclick(s):
     """Decorator ensures function only runs if called twice under `s` seconds."""

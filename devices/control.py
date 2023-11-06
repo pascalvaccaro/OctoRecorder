@@ -51,8 +51,8 @@ class APC40(MidiDevice):
                 yield Msg("volume", ch, value)
         elif control == 15:
             yield Msg("xfader", value)
-        elif control == 19:
-            for ctl in [16, 17, 18]:
+        elif control == 19 or control == 23:
+            for ctl in range(control - 3, control):
                 yield MidiCC(channel, ctl, value)
                 msg.control = ctl
                 yield from self._control_change_in(msg)
@@ -62,8 +62,6 @@ class APC40(MidiDevice):
             if channel == 8:
                 for ch in range(0, 8):
                     yield MidiCC(ch, control, value)
-        elif control in range(48, 56):
-            yield Msg("xfade", control - 48, value)
         elif control == 64:
             yield Msg("toggle", None)
         elif control == 67:

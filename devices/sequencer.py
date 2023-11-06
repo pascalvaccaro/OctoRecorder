@@ -3,8 +3,8 @@ import threading
 import reactivex as rx
 import reactivex.operators as ops
 from reactivex.scheduler import EventLoopScheduler, CatchScheduler
-from midi import InternalMessage as Msg, MidiDevice, MidiScheduler
 from bridge import Bridge
+from midi import InternalMessage as Msg, MidiDevice, MidiScheduler
 from utils import clip, t2i, scroll
 
 
@@ -16,14 +16,8 @@ class Sequencer(MidiDevice):
 
     @property
     def external_message(self):
-        return lambda msg: msg.type in [
-            "bars",
-            "play",
-            "rec",
-            "stop",
-            "toggle",
-            "overdub",
-        ]
+        params = ["bars", "play", "rec", "stop", "toggle", "overdub"]
+        return lambda msg: msg.type in params
 
     @property
     def bars(self):
@@ -79,21 +73,18 @@ class Sequencer(MidiDevice):
         return self.bars * 4 * 24
 
     def subscriber(self, observer, _):
+        def clocker(acc, c):
+            return c if isinstance(c, int) else scroll(acc + 1, 0, self.size - 1)
+
         clock = self.clock if hasattr(self, "clock") else rx.interval(1000 / 24)
         return clock.pipe(
-            ops.scan(
-                lambda acc, c: c
-                if isinstance(c, int)
-                else scroll(acc + 1, 0, self.size),
-                -1,
-            ),
+            ops.scan(clocker, -1),
             ops.flat_map(self._beat_in),
         ).subscribe(observer)
 
     def start(self, *devices: Bridge):
         def on_error(e):
-            logging.exception(e)
-            return True
+            return logging.exception(e) or True
 
         def subscriber(observer, _):
             def on_next(msg):
@@ -117,16 +108,16 @@ class Sequencer(MidiDevice):
         logging.info("[SEQ] %i devices synced", len(devices))
         return stop_event
 
-    def _bars_in(self, msg):
-        self.bars = msg.data
-
     def _beat_in(self, beat):
         if beat % 24 == 0:
             yield Msg("beat")
             if beat == 0:
                 yield Msg("start", self.state, self.bars)
-        elif self.size - beat <= 3:  # last 1/32th beat
+        elif self.size - beat == 1:
             yield Msg("end", self.state, self.bars)
+
+    def _bars_in(self, msg):
+        self.bars = msg.data
 
     def _play_in(self, _):
         self.playing = True

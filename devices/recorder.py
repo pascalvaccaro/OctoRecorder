@@ -1,13 +1,15 @@
 import logging
-import numpy as np
+from numpy import frombuffer, zeros, ones, float32
+from audioop import add, mul
 from sounddevice import Stream, CallbackStop, query_devices
-from audio import Mixer
-from utils import t2i, retry, scroll
+from bridge import Bridge
+from utils import minmax, t2i, retry, scroll
 
 
-class Recorder(Mixer, Stream):
+class Recorder(Bridge, Stream):
     _phrase = 0
-    _data = np.zeros((16, 576000, 8), dtype=np.float32)
+    _volumes = ones(8, dtype=float32)
+    _data = zeros((16, 576000, 8), dtype=float32)
 
     def __init__(self, name, phrases=16, channels=8, samplerate=48000.0):
         super(Recorder, self).__init__(name)
@@ -18,8 +20,9 @@ class Recorder(Mixer, Stream):
         Stream.__init__(
             self,
             device=device.get("name", name),
-            samplerate=device.get("default_samplerate", samplerate),
             channels=device.get("max_input_channels", channels),
+            samplerate=device.get("default_samplerate", samplerate),
+            dtype=float32,
             callback=self.play_rec,
         )
         logging.info("[AUD] Recording device %s at %i.Hz", self.name, self.samplerate)
@@ -29,9 +32,7 @@ class Recorder(Mixer, Stream):
 
     @property
     def external_message(self):
-        params = ["start", "stop", "phrase"]
-        super_external = super().external_message
-        return lambda msg: super_external(msg) or msg.type in params
+        return lambda msg: msg.type in ["start", "stop", "volumes", "phrase"]
 
     @property
     def phrase(self):
@@ -48,6 +49,15 @@ class Recorder(Mixer, Stream):
         return self._data[self.phrase]
 
     @property
+    def volumes(self):
+        return self._volumes
+
+    @volumes.setter
+    def volumes(self, values):
+        track, value = values
+        self._volumes[track] = minmax(value / 127)
+
+    @property
     def is_closed(self):
         return self.closed
 
@@ -59,13 +69,16 @@ class Recorder(Mixer, Stream):
             if remainder <= 0:
                 raise CallbackStop
             offset = frames if remainder >= frames else remainder
-            buffer = np.zeros((frames, self.channels[0]), dtype=np.float32)
+            buffer = zeros((frames, self.channels[0]), dtype=float32)
             if "Play" in self.state:
-                buffer[:offset] = self.data[self.cursor : self.cursor + offset]
+                buffer[:offset][:] = self.data[self.cursor : self.cursor + offset]
                 buffer[offset:] = 0
             if "Record" in self.state:
                 self.data[self.cursor : self.cursor + offset] = indata[:offset]
-            outdata[:] = self.master_out(indata, buffer)
+            for ch, vol in enumerate(self.volumes):
+                track_in = indata[:, ch].tobytes()
+                track_out = mul(buffer[:, ch].tobytes(), 4, vol)
+                outdata[:, ch] = frombuffer(add(track_in, track_out, 4), dtype=float32)
             self.cursor += offset
         except Exception as e:
             logging.exception(e)
@@ -87,6 +100,9 @@ class Recorder(Mixer, Stream):
 
     def _phrase_in(self, msg):
         self.phrase = msg.data
+
+    def _volume_in(self, msg):
+        self.volumes = msg.data
 
     def _stop_in(self, _):
         self.stop()
