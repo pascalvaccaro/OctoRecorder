@@ -42,9 +42,9 @@ class Bridge(BehaviorSubject[InternalMessage]):
             return rx.of(messages)
         return rx.never()
 
-    def attach(self, device: "Bridge"):
+    def connect(self, device: "Bridge"):
         return (
-            rx.Observable(self.subscriber)
+            rx.Observable(self.receive)
             if self.name == device.name
             else device.pipe(
                 ops.filter(self.external_message),
@@ -60,19 +60,17 @@ class Bridge(BehaviorSubject[InternalMessage]):
 
     def debug(self, msg):
         if msg is not None:
-            logging.debug(
-                "[IN] %s message from %s: %s",
-                msg.type.capitalize(),
-                self.name,
-                msg.dict(),
-            )
+            debug_infos = [self.name, msg.type.capitalize(), msg.dict()]
+            logging.debug("%s %s message IN: %s", *debug_infos)
 
-    def subscriber(self, _, __):
+    def receive(self, _, __):
         return SingleAssignmentDisposable()
 
     def send(self, msg):
         if isinstance(msg, InternalMessage):
             self.on_next(msg)
+            debug_infos = [self.name, msg.type.capitalize(), msg.dict()]
+            logging.debug("%s %s message THRU: %s", *debug_infos)
 
     @property
     def init_actions(self):

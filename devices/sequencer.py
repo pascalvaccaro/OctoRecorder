@@ -2,11 +2,9 @@ import logging
 import threading
 import reactivex as rx
 import reactivex.operators as ops
-from reactivex.abc import ObserverBase, SchedulerBase
-from reactivex.scheduler import EventLoopScheduler, CatchScheduler
-from typing import Optional
+from reactivex.scheduler import CatchScheduler, EventLoopScheduler
 from bridge import Bridge
-from midi import InternalMessage as Msg, MidiDevice
+from midi import InternalMessage as Msg, MidiDevice, midi_scheduler
 from utils import clip, t2i, scroll
 
 
@@ -82,7 +80,7 @@ class Sequencer(MidiDevice):
     def size(self):
         return self.bars * 4 * 24
 
-    def subscriber(self, observer, scheduler):
+    def receive(self, observer, scheduler):
         def clocker(acc, msg):
             return 0 if msg.type == "start" else scroll(acc + 1, 0, self.size - 1)
 
@@ -99,18 +97,21 @@ class Sequencer(MidiDevice):
         )
 
     def start(self, *devices: Bridge):
-        def on_error(e):
-            return logging.exception(e) or True
-
         stop_event = threading.Event()
         all_devices = (self, *devices)
-        scheduler = CatchScheduler(EventLoopScheduler(), on_error)
-        for dev in all_devices:
-            dev.subs = rx.merge(*[dev.attach(d) for d in all_devices]).subscribe(
-                on_next=dev.send, on_completed=stop_event.set, scheduler=scheduler
-            )
-        logging.info("%s syncing %i devices", self.name, len(devices))
-        return stop_event
+        try:
+            for dev in all_devices:
+                dev.subs = rx.merge(*[dev.connect(d) for d in all_devices]).subscribe(
+                    on_next=dev.send,
+                    on_error=logging.exception,
+                    on_completed=stop_event.set,
+                    scheduler=midi_scheduler,
+                )
+            logging.info("%s syncing %i devices", self.name, len(devices))
+            stop_event.wait()
+        except KeyboardInterrupt:
+            logging.info("[ALL] Stopped by user")
+            stop_event.set()
 
     def _beat_in(self, beat):
         if beat % 24 == 0:

@@ -1,12 +1,11 @@
 import logging
 import mido
-from reactivex import from_iterable, Observer
-from reactivex.abc import SchedulerBase, ObserverBase
-from reactivex.disposable import MultipleAssignmentDisposable, CompositeDisposable
+from reactivex.abc import ObserverBase
 
 from bridge import Bridge
-from midi.messages import clean_messages, InternalMessage, MidiMessage, ControlException
+from midi.messages import MidiMessage
 from midi.server import MidiServer
+from midi.scheduler import MidiScheduler, midi_scheduler
 from utils import retry
 
 
@@ -37,66 +36,21 @@ class MidiDevice(Bridge):
         if self.outport is not None and not self.outport.closed:
             self.outport.close()
 
-    def subscriber(
-        self,
-        final: ObserverBase,
-        scheduler: SchedulerBase,
-    ):
-        disp = MultipleAssignmentDisposable()
-        disp.disposable = from_iterable(self.init_actions).subscribe(self.send)
-
-        def action(sched: SchedulerBase, state=[]):
-            if self.is_closed:
-                final.on_completed()
-                disp.dispose()
-                return disp
-
-            proxy = Observer(self.send, final.on_error)
-            cdisp = CompositeDisposable(disp.disposable)
-            midi_in = [
-                m
-                for m in self.inport.iter_pending()
-                if m.type not in ["clock", "start"]
-            ]
-            (self.server.send(msg) for msg in midi_in)
-            client_in = []
-            for port in self.server:
-                client_in += [m for m in port.iter_pending()]
-            all_messages: "list[MidiMessage]" = [*midi_in, *client_in]
-            messages = [m for m in all_messages if self.select_message(m)]
-
-            while len(messages) > 0:
-                item = messages.pop()
-                if item.bytes() != state:
-                    cdisp.add(self.to_messages(item).subscribe(proxy))
-                try:
-                    messages = clean_messages(item, messages)
-                except ControlException as e:
-                    self.channel = e.channel
-                    messages.clear()
-                finally:
-                    self.debug(item)
-                    state = item.bytes()
-
-            cdisp.add(sched.schedule_relative(0.01, action, state))
-            disp.disposable = cdisp
-            return disp
-
-        return action(scheduler, disp)
+    def receive(self, observer: ObserverBase, scheduler: MidiScheduler):
+        return scheduler.schedule_in(self, observer)
 
     def send(self, msg):
-        if msg is None:
-            return
         try:
-            if isinstance(msg, tuple):
-                msg = msg[0]
-            log = [self.name, msg.type.capitalize(), msg.dict()]
-            if isinstance(msg, InternalMessage):
-                self.on_next(msg)
-                log.insert(0, "%s %s message THRU: %s")
-            elif isinstance(msg, MidiMessage):
-                self.outport.send(msg)
-                log.insert(0, "%s %s message OUT: %s")
-            logging.debug(*log)
+            if isinstance(msg, MidiMessage):
+                midi_scheduler.schedule_out(self.send_action, msg)
+            else:
+                super().send(msg)
         except Exception as e:
-            logging.error("%s error OUT %s", self.name, e)
+            logging.error("%s error OUT", self.name)
+            logging.exception(e)
+
+    def send_action(self, _, msg):
+        if msg is not None:
+            self.outport.send(msg)
+            debug_infos = [self.name, msg.type.capitalize(), msg.dict()]
+            logging.debug("%s %s message OUT: %s", *debug_infos)

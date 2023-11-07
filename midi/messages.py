@@ -1,5 +1,6 @@
 import mido
 import logging
+from typing import List, TypeVar
 
 SYNTH_SYSEX_HEAD = [65, 0, 0, 0, 0, 105]
 SYNTH_SYSEX_REQ = [*SYNTH_SYSEX_HEAD, 17]
@@ -8,25 +9,6 @@ SYNTH_ADDRESSES = {"common": [0, 1], "patch": [16, 0], "inout": [0, 4]}
 
 CONTROL_FORBIDDEN_CC = range(16, 24)
 CONTROL_FORBIDDEN_CHECKSUM = sum(CONTROL_FORBIDDEN_CC)
-
-
-class ControlException(Exception):
-    def __init__(self, channel, *args: object) -> None:
-        super().__init__(*args)
-        self.channel = channel
-
-
-def clean_messages(item, messages=[]) -> "list":
-    if item.type == "control_change":
-        cc = [m for m in messages if m.type == "control_change"]
-        # Block CC messages sent on track selection
-        if item.control in CONTROL_FORBIDDEN_CC:
-            if sum(map(lambda m: m.control, cc)) == CONTROL_FORBIDDEN_CHECKSUM:
-                # A tiny hack to set the channel on track selection
-                raise ControlException(item.channel)
-        # Buffer identical CC messages
-        return [m for m in cc if m.control != item.control]
-    return [*messages]
 
 
 def checksum(addr, body=[]):
@@ -103,6 +85,61 @@ class InternalMessage(object):
 
     def is_cc(self):
         return False
-    
+
     def bytes(self):
         return list(self.data)
+
+
+T = TypeVar("T", MidiCC, MidiNote, Sysex)
+
+
+class QMidiMessage(List[T]):
+    def __init__(self, iterable=None):
+        super().__init__()
+        if isinstance(iterable, list):
+            for el in iterable:
+                self.append(el)
+
+    def pop(self):
+        msg = super().pop()
+        for el in self.__iter__():
+            if (
+                isinstance(msg, MidiCC)
+                and isinstance(el, MidiCC)
+                and el.channel == msg.channel
+                and el.control == msg.control
+            ) or (
+                isinstance(msg, Sysex)
+                and isinstance(el, Sysex)
+                and abs(el.data[-1] - msg.data[-1]) <= 1
+            ):
+                self.remove(el)
+
+        return msg
+
+    def append(self, msg: T):
+        if isinstance(msg, (MidiCC, Sysex)):
+            # the last cc/sysex must be at the top of the queue
+            super().append(msg)
+        else:
+            # otherwise we need to keep the order of events when dequeuing
+            self.insert(0, msg)
+
+
+class ControlException(Exception):
+    def __init__(self, channel, *args: object) -> None:
+        super().__init__(*args)
+        self.channel = channel
+
+
+def clean_messages(item, messages: QMidiMessage = QMidiMessage()) -> QMidiMessage:
+    if isinstance(item, MidiCC):
+        cc: list[MidiCC] = [m for m in messages if isinstance(item, MidiCC)]
+        # Block CC messages sent on track selection
+        if item.control in CONTROL_FORBIDDEN_CC:
+            if sum(map(lambda m: m.control, cc)) == CONTROL_FORBIDDEN_CHECKSUM:
+                # A tiny hack to set the channel on track selection
+                raise ControlException(item.channel)
+        # Buffer identical CC messages
+        return QMidiMessage(cc)
+    return messages

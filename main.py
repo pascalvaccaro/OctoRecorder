@@ -25,6 +25,6 @@ if __name__ == "__main__":
         control = APC40(CONTROL_DEVICE_NAME, 8080)
         synth = SY1000(SYNTH_DEVICE_NAME, 8081)
         audio = Recorder(AUDIO_DEVICE_NAME, 16, 8)
-        Sequencer(synth).start(control, synth, audio).wait()
-    except KeyboardInterrupt:
-        logging.info("[ALL] Stopped by user")
+        Sequencer(synth).start(control, synth, audio)
+    except Exception as e:
+        logging.exception(e)
