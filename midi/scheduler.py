@@ -54,8 +54,8 @@ class MidiScheduler(EventLoopScheduler):
 
                 while len(messages) > 0:
                     item = messages.pop()
-                    if isinstance(item, MidiCC) and is_track_selection(item, messages):
-                        dev.channel = item.channel
+                    if item.type == "control_change" and is_track_selection(item, messages):
+                        dev.channel = item.channel # type: ignore
                         break
                     elif item.bytes() != state:
                         cdisp.add(

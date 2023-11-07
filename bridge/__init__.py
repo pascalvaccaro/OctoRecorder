@@ -31,8 +31,10 @@ class Bridge(BehaviorSubject[InternalMessage]):
     def to_messages(self, msg):
         if msg is None:
             return rx.never()
-        method = getattr(self, "_" + msg.type + "_in")
-        messages = method(msg) if method is not None else None
+        method = "_" + msg.type + "_in"
+        if not hasattr(self, method):
+            return rx.never()
+        messages = getattr(self, method)(msg)
 
         if isinstance(messages, rx.Observable):
             return messages

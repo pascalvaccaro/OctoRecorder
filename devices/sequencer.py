@@ -2,7 +2,8 @@ import logging
 import threading
 import reactivex as rx
 import reactivex.operators as ops
-from reactivex.scheduler import CatchScheduler, EventLoopScheduler
+from reactivex.disposable import CompositeDisposable
+from reactivex.scheduler import EventLoopScheduler
 from bridge import Bridge
 from midi import InternalMessage as Msg, MidiDevice, midi_scheduler
 from utils import clip, t2i, scroll
@@ -100,15 +101,18 @@ class Sequencer(MidiDevice):
         stop_event = threading.Event()
         all_devices = (self, *devices)
         try:
+            main_disp = CompositeDisposable()
             for dev in all_devices:
-                dev.subs = rx.merge(*[dev.connect(d) for d in all_devices]).subscribe(
+                disp = rx.merge(*[dev.connect(d) for d in all_devices]).subscribe(
                     on_next=dev.send,
                     on_error=logging.exception,
                     on_completed=stop_event.set,
                     scheduler=midi_scheduler,
                 )
+                main_disp.add(disp)
             logging.info("%s syncing %i devices", self.name, len(devices))
             stop_event.wait()
+            main_disp.dispose()
         except KeyboardInterrupt:
             logging.info("[ALL] Stopped by user")
             stop_event.set()

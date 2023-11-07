@@ -8,7 +8,7 @@ SYNTH_SYSEX_CMD = [*SYNTH_SYSEX_HEAD, 18]
 SYNTH_ADDRESSES = {"common": [0, 1], "patch": [16, 0], "inout": [0, 4]}
 
 CONTROL_FORBIDDEN_CC = range(16, 24)
-CONTROL_FORBIDDEN_CHECKSUM = sum(CONTROL_FORBIDDEN_CC)
+CONTROL_FORBIDDEN_CHECKSUM = sum(CONTROL_FORBIDDEN_CC)  # 156
 
 
 def checksum(addr, body=[]):
@@ -104,7 +104,7 @@ class MidiCC(MidiMessage):
     def is_after(self):
         def wrapped(msg):
             return (
-                isinstance(msg, MidiCC)
+                msg.type == "control_change"
                 and self.channel == msg.channel
                 and self.control == msg.control
             )
@@ -140,7 +140,7 @@ class QMidiMessage(List[T]):
 
     def pop(self):
         msg = super().pop()
-        if isinstance(msg, (MidiCC, Sysex)):
+        if isinstance(msg, (Sysex, MidiCC)):
             for el in self:
                 if msg.is_after(el):
                     self.remove(el)
@@ -148,7 +148,7 @@ class QMidiMessage(List[T]):
         return msg
 
     def add(self, msg: T):
-        if isinstance(msg, (MidiCC, Sysex)):
+        if msg.type in ["control_change", "sysex"]:
             # the last cc/sysex must be at the top of the queue (LIFO)
             super().append(msg)
         else:
@@ -157,9 +157,14 @@ class QMidiMessage(List[T]):
 
 
 def is_track_selection(item, upcoming: QMidiMessage):
-    cc: list[MidiCC] = [m for m in upcoming if isinstance(item, MidiCC)]
-    # Target the message list of CC sent on track selection
+    """Target the message list of CC sent on track selection"""
     return (
         item.control in CONTROL_FORBIDDEN_CC
-        and sum(map(lambda m: m.control, cc)) == CONTROL_FORBIDDEN_CHECKSUM
+        and sum(
+            map(
+                lambda m: m.control,
+                [item, *filter(lambda m: m.type == "control_change", upcoming)],
+            )
+        )
+        == CONTROL_FORBIDDEN_CHECKSUM
     )

@@ -77,26 +77,23 @@ class SY1000(MidiDevice):
         yield SysexCmd("common", [0, 0, *data])
 
     def _strings_in(self, msg: Msg):
-        channel, control, value = msg.data
-        instr = (
-            21
-            if control == 16 or control == 20
-            else 32
-            if control == 17 or control == 21
-            else 18
-        )
-        string = channel + (6 if control <= 19 else 12)
-        value = clip(value / 127 * 100)
+        channel, control, velocity = msg.data
+        if channel == 6 or channel == 7:
+            return
+        instrs = set()
+        if control in [16, 19, 20, 23]:
+            instrs.add(21)
+        if control in [17, 19, 21, 23]:
+            instrs.add(32)
+        if control in [18, 19, 22, 23]:
+            instrs.add(43)
+        param = 6 if control <= 19 else 12
+        string = channel + param if channel < 6 else param
+        decimal = clip(velocity / 127 * 100)
+        value = [decimal] * 6 if channel == 8 else [decimal]
 
-        if channel < 6:
-            yield SysexCmd("patch", [instr, string, value])
-        elif channel == 8:
-            all_values = [value] * 6
-            if control < 19:
-                yield SysexCmd("patch", [instr, 6, *all_values])
-            elif control < 23:
-                for instr in [21, 32, 43]:
-                    yield SysexCmd("patch", [instr, 12, *all_values])
+        for instr in instrs:
+            yield SysexCmd("patch", [instr, string, *value])
 
     def _steps_in(self, msg: Msg):
         param, steps = msg.data
