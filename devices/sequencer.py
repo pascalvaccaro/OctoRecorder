@@ -86,16 +86,16 @@ class Sequencer(MidiDevice):
             return 0 if msg.type == "start" else scroll(acc + 1, 0, self.size - 1)
 
         # inport iterable is blocking code, need to use a dedicated thread for a nice sync
-        return (
-            rx.from_iterable(self.inport, EventLoopScheduler()).pipe(
-                ops.filter(self.select_message),
-                ops.do_action(self.server.send),
-                ops.scan(clocker, -1),
-                ops.flat_map(self._beat_in),
-            )
-            # now the clock can run the common thread
-            .subscribe(observer, scheduler=scheduler)
+        clock, messages = rx.from_iterable(self.inport, EventLoopScheduler()).pipe(
+            ops.partition(self.select_message),
         )
+        # now the clock can run the common thread
+        return clock.pipe(
+            ops.do_action(self.server.send),
+            ops.scan(clocker, -1),
+            ops.flat_map(self._beat_in),
+            ops.merge(messages.pipe(ops.map(Msg.to_internal_message)))
+        ).subscribe(observer, scheduler=scheduler)
 
     def start(self, *devices: Bridge):
         stop_event = threading.Event()

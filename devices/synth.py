@@ -20,7 +20,15 @@ class SY1000(MidiDevice):
 
     @property
     def external_message(self):
-        controls = ["patch", "strings", "steps", "target", "xfader"]
+        controls = [
+            "patch",
+            "strings",
+            "steps",
+            "target",
+            "xfader",
+            "sysex",
+            "program_change",
+        ]
         return lambda msg: msg.type in controls
 
     @property
@@ -36,7 +44,7 @@ class SY1000(MidiDevice):
         if msg.data[0] != 65 or msg.data[6] != 18:
             yield
         data = msg.data[7:]
-        if data[0] == 0:  # "common" message
+        if data[1] == 1:  # "common" message
             self.patch = int("0x" + "".join(map(lambda a: hex(a)[2:], data[4:-1])), 16)
             yield from self.get_strings
         elif data[0] == 16:  # "patch" message
@@ -60,7 +68,7 @@ class SY1000(MidiDevice):
                 targets, steps = data[4:7], data[7:]
                 for i, param in enumerate(["pitch", "cutoff", "level"]):
                     param_steps = enumerate(steps[i * 32 : (i + 1) * 32])
-                    max_values = (s for i, s in param_steps if i % 2 == 1)
+                    max_values = [s for i, s in param_steps if i % 2 == 1]
                     yield Msg(param, targets[i], max_values)
 
     def _program_change_in(self, _=None):

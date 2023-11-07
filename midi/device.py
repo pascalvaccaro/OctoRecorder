@@ -30,7 +30,7 @@ class MidiDevice(Bridge):
         return self.inport.closed
 
     @property
-    def iter_pending(self):
+    def messages(self):
         midi_in = [
             m for m in self.inport.iter_pending() if m.type not in ["clock", "start"]
         ]
@@ -39,7 +39,7 @@ class MidiDevice(Bridge):
         client_in = []
         for port in self.server:
             client_in += [m for m in port.iter_pending()]
-        return [*midi_in, *client_in]
+        return [m for m in [*midi_in, *client_in] if self.select_message(m)]
 
     def __del__(self):
         super().__del__()

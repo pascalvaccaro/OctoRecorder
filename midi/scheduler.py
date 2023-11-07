@@ -4,13 +4,7 @@ from reactivex import from_iterable
 from reactivex.abc import ObserverBase
 from reactivex.scheduler import EventLoopScheduler
 from reactivex.disposable import CompositeDisposable, MultipleAssignmentDisposable
-from midi.messages import (
-    MidiMessage,
-    MidiNote,
-    QMidiMessage,
-    MidiCC,
-    is_track_selection,
-)
+from midi.messages import MidiMessage, MidiNote, QMidiMessage, is_track_selection
 
 
 class MidiScheduler(EventLoopScheduler):
@@ -39,7 +33,7 @@ class MidiScheduler(EventLoopScheduler):
     def schedule_in(self, dev, final: ObserverBase):
         disp = MultipleAssignmentDisposable()
         disp.disposable = from_iterable(dev.init_actions).subscribe(
-            final.on_next, final.on_error, scheduler=self
+            final.on_next, final.on_error
         )
 
         def action(sched, state):
@@ -50,12 +44,14 @@ class MidiScheduler(EventLoopScheduler):
                     disp.dispose()
                     return disp
                 cdisp = CompositeDisposable(disp.disposable)
-                messages: QMidiMessage[MidiMessage] = QMidiMessage(dev.iter_pending)
+                messages: QMidiMessage[MidiMessage] = QMidiMessage(dev.messages)
 
                 while len(messages) > 0:
                     item = messages.pop()
-                    if item.type == "control_change" and is_track_selection(item, messages):
-                        dev.channel = item.channel # type: ignore
+                    if item.type == "control_change" and is_track_selection(
+                        item, messages
+                    ):
+                        dev.channel = item.channel  # type: ignore
                         break
                     elif item.bytes() != state:
                         cdisp.add(
