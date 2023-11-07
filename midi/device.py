@@ -29,6 +29,18 @@ class MidiDevice(Bridge):
     def is_closed(self):
         return self.inport.closed
 
+    @property
+    def iter_pending(self):
+        midi_in = [
+            m for m in self.inport.iter_pending() if m.type not in ["clock", "start"]
+        ]
+        for msg in midi_in:
+            self.server.send(msg)
+        client_in = []
+        for port in self.server:
+            client_in += [m for m in port.iter_pending()]
+        return [*midi_in, *client_in]
+
     def __del__(self):
         super().__del__()
         if self.inport is not None and not self.inport.closed:

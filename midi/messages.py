@@ -24,6 +24,10 @@ def checksum(addr, body=[]):
 class MidiMessage(mido.messages.Message):
     type: str
 
+    @property
+    def is_after(self):
+        return lambda _: False
+
     def bytes(self):
         return super().bytes()
 
@@ -36,6 +40,29 @@ class Sysex(MidiMessage):
         super(Sysex, self).__init__(
             "sysex", data=[*dest, *checksum(addr, data)], *args, **kwargs
         )
+
+    @property
+    def is_after(self):
+        def wrapped(msg):
+            return (
+                isinstance(msg, Sysex)
+                and self.address == msg.address
+                and len(self.body) == len(msg.body)
+            )
+
+        return wrapped
+
+    @property
+    def address(self):
+        return self.data[7:11]
+
+    @property
+    def body(self):
+        return self.data[11:-1]
+
+    @property
+    def checksum(self):
+        return self.data[-1]
 
 
 class SysexCmd(Sysex):
@@ -73,6 +100,17 @@ class MidiCC(MidiMessage):
             "control_change", channel=channel, control=control, value=value
         )
 
+    @property
+    def is_after(self):
+        def wrapped(msg):
+            return (
+                isinstance(msg, MidiCC)
+                and self.channel == msg.channel
+                and self.control == msg.control
+            )
+
+        return wrapped
+
 
 class InternalMessage(object):
     def __init__(self, type: str, *args):
@@ -90,7 +128,7 @@ class InternalMessage(object):
         return list(self.data)
 
 
-T = TypeVar("T", MidiCC, MidiNote, Sysex)
+T = TypeVar("T", MidiMessage, MidiNote, MidiCC, Sysex)
 
 
 class QMidiMessage(List[T]):
@@ -98,48 +136,30 @@ class QMidiMessage(List[T]):
         super().__init__()
         if isinstance(iterable, list):
             for el in iterable:
-                self.append(el)
+                self.add(el)
 
     def pop(self):
         msg = super().pop()
-        for el in self.__iter__():
-            if (
-                isinstance(msg, MidiCC)
-                and isinstance(el, MidiCC)
-                and el.channel == msg.channel
-                and el.control == msg.control
-            ) or (
-                isinstance(msg, Sysex)
-                and isinstance(el, Sysex)
-                and abs(el.data[-1] - msg.data[-1]) <= 1
-            ):
-                self.remove(el)
+        if isinstance(msg, (MidiCC, Sysex)):
+            for el in self:
+                if msg.is_after(el):
+                    self.remove(el)
 
         return msg
 
-    def append(self, msg: T):
+    def add(self, msg: T):
         if isinstance(msg, (MidiCC, Sysex)):
-            # the last cc/sysex must be at the top of the queue
+            # the last cc/sysex must be at the top of the queue (LIFO)
             super().append(msg)
         else:
-            # otherwise we need to keep the order of events when dequeuing
+            # otherwise keep the original order of events when dequeuing (FIFO)
             self.insert(0, msg)
 
 
-class ControlException(Exception):
-    def __init__(self, channel, *args: object) -> None:
-        super().__init__(*args)
-        self.channel = channel
-
-
-def clean_messages(item, messages: QMidiMessage = QMidiMessage()) -> QMidiMessage:
-    if isinstance(item, MidiCC):
-        cc: list[MidiCC] = [m for m in messages if isinstance(item, MidiCC)]
-        # Block CC messages sent on track selection
-        if item.control in CONTROL_FORBIDDEN_CC:
-            if sum(map(lambda m: m.control, cc)) == CONTROL_FORBIDDEN_CHECKSUM:
-                # A tiny hack to set the channel on track selection
-                raise ControlException(item.channel)
-        # Buffer identical CC messages
-        return QMidiMessage(cc)
-    return messages
+def is_track_selection(item, upcoming: QMidiMessage):
+    cc: list[MidiCC] = [m for m in upcoming if isinstance(item, MidiCC)]
+    # Target the message list of CC sent on track selection
+    return (
+        item.control in CONTROL_FORBIDDEN_CC
+        and sum(map(lambda m: m.control, cc)) == CONTROL_FORBIDDEN_CHECKSUM
+    )

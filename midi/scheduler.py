@@ -8,8 +8,8 @@ from midi.messages import (
     MidiMessage,
     MidiNote,
     QMidiMessage,
-    ControlException,
-    clean_messages,
+    MidiCC,
+    is_track_selection,
 )
 
 
@@ -24,7 +24,7 @@ class MidiScheduler(EventLoopScheduler):
         if isinstance(state, MidiNote) and not self._lock:
             self.schedule(action, state)
         else:
-            self._midiout.append(state)
+            self._midiout.add(state)
 
         if not self._lock:
             self._lock = True
@@ -43,44 +43,28 @@ class MidiScheduler(EventLoopScheduler):
         )
 
         def action(sched, state):
-            if dev.is_closed:
-                final.on_completed()
-                disp.dispose()
-                return disp
-
             try:
                 start = time.time()
+                if dev.is_closed:
+                    final.on_completed()
+                    disp.dispose()
+                    return disp
                 cdisp = CompositeDisposable(disp.disposable)
-                midi_in = [
-                    m
-                    for m in dev.inport.iter_pending()
-                    if m.type not in ["clock", "start"]
-                ]
-                (dev.server.send(msg) for msg in midi_in)
-                client_in = []
-                for port in dev.server:
-                    client_in += [m for m in port.iter_pending()]
-                all_messages: "list[MidiMessage]" = [*midi_in, *client_in]
-                messages = QMidiMessage(
-                    [m for m in all_messages if dev.select_message(m)]
-                )
+                messages: QMidiMessage[MidiMessage] = QMidiMessage(dev.iter_pending)
 
                 while len(messages) > 0:
                     item = messages.pop()
-                    try:
-                        if item.bytes() != state:
-                            cdisp.add(
-                                dev.to_messages(item).subscribe(
-                                    final.on_next, final.on_error, scheduler=sched
-                                )
+                    if isinstance(item, MidiCC) and is_track_selection(item, messages):
+                        dev.channel = item.channel
+                        break
+                    elif item.bytes() != state:
+                        cdisp.add(
+                            dev.to_messages(item).subscribe(
+                                final.on_next, final.on_error, scheduler=sched
                             )
-                            state = item.bytes()
-                        messages = clean_messages(item, messages)
-                    except ControlException as e:
-                        dev.channel = e.channel
-                        messages.clear()
-                    finally:
+                        )
                         dev.debug(item)
+                        state = item.bytes()
 
                 delta = self._flowrate - min(time.time() - start, self._flowrate)
                 cdisp.add(sched.schedule_relative(delta, action, state))
