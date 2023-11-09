@@ -1,14 +1,16 @@
 import logging
-from numpy import frombuffer, zeros, ones, float32
-from audioop import add, mul
+from numpy import frombuffer, zeros, ones, float32, array
+from audioop import add, mul, tomono, tostereo
 from sounddevice import Stream, CallbackStop, query_devices
 from bridge import Bridge
 from utils import minmax, t2i, retry, scroll
 
 
 class Recorder(Bridge, Stream):
+    x = 0.5
     _phrase = 0
     _volumes = ones(8, dtype=float32)
+    _pans = array([0.5] * 8, dtype=float32)
     _data = zeros((16, 576000, 8), dtype=float32)
 
     def __init__(self, name, phrases=16, channels=8, samplerate=48000.0):
@@ -32,7 +34,8 @@ class Recorder(Bridge, Stream):
 
     @property
     def external_message(self):
-        return lambda msg: msg.type in ["start", "stop", "volumes", "phrase"]
+        controls = ["start", "stop", "volumes", "phrase", "xfade", "xfader"]
+        return lambda msg: msg.type in controls
 
     @property
     def phrase(self):
@@ -49,13 +52,16 @@ class Recorder(Bridge, Stream):
         return self._data[self.phrase]
 
     @property
-    def volumes(self):
-        return self._volumes
-
-    @volumes.setter
-    def volumes(self, values):
-        track, value = values
-        self._volumes[track] = minmax(value / 127)
+    def faders(self):
+        faders = []
+        for ch, vol in enumerate(self._volumes):
+            if ch < 6:  # strings
+                faders += [(vol, self._pans[ch])]
+            elif ch == 6:  # OUT-L
+                faders += [(vol * (1 - self._pans[ch]), None)]
+            elif ch == 7:  # OUT-R
+                faders += [(vol * self._pans[ch], None)]
+        return faders
 
     @property
     def is_closed(self):
@@ -75,10 +81,16 @@ class Recorder(Bridge, Stream):
                 buffer[offset:] = 0
             if "Record" in self.state:
                 self.data[self.cursor : self.cursor + offset] = indata[:offset]
-            for ch, vol in enumerate(self.volumes):
+            for ch, values in enumerate(self.faders):
+                vol, pan = values
                 track_in = indata[:, ch].tobytes()
                 track_out = mul(buffer[:, ch].tobytes(), 4, vol)
-                outdata[:offset, ch] = frombuffer(add(track_in, track_out, 4), dtype=float32)
+                if pan is not None:  # string pan
+                    stereo = tostereo(track_out, 4, 1 - pan, pan)
+                    track_out = tomono(stereo, 4, 1 - self.x, self.x)
+                outdata[:offset, ch] = frombuffer(
+                    add(track_in, track_out, 4), dtype=float32
+                )
             outdata[offset:] = 0
             self.cursor += offset
         except Exception as e:
@@ -90,18 +102,22 @@ class Recorder(Bridge, Stream):
         maxsize = int(self.samplerate * bars * 6)
         self._data.resize((len(self._data), maxsize, self.channels[0]))
         self.cursor = 0
-        logging.info(
-            "[AUD] %sing %i bars sample (%i chunks)",
-            "ing/".join(self.state),
-            bars,
-            maxsize,
-        )
+        label = "ing/".join(self.state)
+        logging.info("[AUD] %sing %i bars sample (%i chunks)", label, bars, maxsize)
 
     def _phrase_in(self, msg):
         self.phrase = msg.data
 
     def _volume_in(self, msg):
-        self.volumes = msg.data
+        track, value = msg.data
+        self._volumes[track] = minmax(value / 127)
 
     def _stop_in(self, _):
         self.stop()
+
+    def _xfade_in(self, msg):
+        track, value = msg.data[1:]
+        self._pans[track] = minmax(value / 127)
+
+    def _xfader_in(self, msg):
+        self.x = minmax(msg.data[0] / 127)
