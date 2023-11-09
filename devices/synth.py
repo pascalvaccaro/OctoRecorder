@@ -60,8 +60,7 @@ class SY1000(MidiDevice):
 
     def _xfader_in(self, msg: Msg):
         value = clip(msg.data[0] / 127 * 200, 0, 200)
-        left, right = (200 - value, value) if value < 100 else (value, 200 - value)
-        data = [*split_hex(left), *split_hex(right)] * 2
+        data = [*split_hex(200 - value), *split_hex(value)] * 2
         yield SysexCmd("inout", [0, 44, *data])
 
     def _sysex_in(self, msg: Union[SysexCmd, Msg]):
