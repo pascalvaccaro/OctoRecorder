@@ -103,7 +103,7 @@ class Recorder(Bridge, Stream):
         self._data.resize((len(self._data), maxsize, self.channels[0]))
         self.cursor = 0
         label = "ing/".join(self.state)
-        logging.info("[AUD] %sing %i bars sample (%i chunks)", label, bars, maxsize)
+        logging.debug("[AUD] %sing %i bars sample (%i chunks)", label, bars, maxsize)
 
     def _phrase_in(self, msg):
         self.phrase = msg.data

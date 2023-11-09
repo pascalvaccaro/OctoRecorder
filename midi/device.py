@@ -3,7 +3,7 @@ import mido
 from reactivex.abc import ObserverBase
 
 from bridge import Bridge
-from midi.messages import MidiMessage
+from midi.messages import MidiMessage, InternalMessage
 from midi.server import MidiServer
 from midi.scheduler import MidiScheduler, midi_scheduler
 from utils import retry
@@ -53,7 +53,11 @@ class MidiDevice(Bridge):
 
     def send(self, msg):
         try:
-            if isinstance(msg, MidiMessage):
+            if isinstance(msg, InternalMessage):
+                self.on_next(msg)
+                debug_infos = [self.name, msg.type.capitalize(), msg.dict()]
+                logging.debug("%s %s message THRU: %s", *debug_infos)
+            elif isinstance(msg, MidiMessage):
                 midi_scheduler.schedule_out(self.send_action, msg)
             else:
                 super().send(msg)
@@ -66,3 +70,8 @@ class MidiDevice(Bridge):
             self.outport.send(msg)
             debug_infos = [self.name, msg.type.capitalize(), msg.dict()]
             logging.debug("%s %s message OUT: %s", *debug_infos)
+
+    def debug(self, msg):
+        if msg is not None:
+            debug_infos = [self.name, msg.type.capitalize(), msg.dict()]
+            logging.debug("%s %s message IN: %s", *debug_infos)

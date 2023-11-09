@@ -1,0 +1,5 @@
+python-dotenv
+numpy
+mido
+reactivex
+sounddevice

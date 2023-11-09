@@ -16,7 +16,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-from devices import APC40, SY1000, Recorder, Sequencer
+from devices import Recorder, Sequencer, APC40, SY1000
 
 if __name__ == "__main__":
     try:

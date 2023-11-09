@@ -12,7 +12,20 @@ Record individual string signals from a SY-1000 guitar synthetizer
 - MIDI clock synchronization
 
 
-## Environment Variables
+## Install
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+### Dependencies
+
+- [mido](https://mido.readthedocs.io/en/stable/installing.html) 
+- [sounddevice](https://python-sounddevice.readthedocs.io/en/0.4.6/installation.html). 
+
+Refer to these packages documentation to configure them accordingly
+
+### Environment Variables
 
 To run this project, you will need to add the following environment variables to your .env file
 
@@ -24,14 +37,6 @@ To run this project, you will need to add the following environment variables to
 
 `__MIDO_BACKEND__`: mido backend name, ex: `"mido.backends.portmidi"`
 
-
-## Dependencies
-
-- [python3](https://www.python.org/downloads/)
-- [mido](https://mido.readthedocs.io/en/stable/installing.html) 
-- [sounddevice](https://python-sounddevice.readthedocs.io/en/0.4.6/installation.html). 
-
-Refer to these packages documentation to install and configure them accordingly
 
 ## Usage
 

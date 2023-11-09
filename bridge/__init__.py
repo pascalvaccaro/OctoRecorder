@@ -3,17 +3,16 @@ import reactivex as rx
 import reactivex.operators as ops
 from reactivex.abc import DisposableBase
 from reactivex.disposable import SingleAssignmentDisposable
-from reactivex.subject import BehaviorSubject
-from typing import Iterable, MutableSet
-from midi import InternalMessage
-from utils import doubleclick
+from reactivex.subject import Subject
+from typing import MutableSet
+from utils import doubleclick, to_observable
 
 
-class Bridge(BehaviorSubject[InternalMessage]):
+class Bridge(Subject):
     _subs: MutableSet[DisposableBase] = set()
 
     def __init__(self, name):
-        super(Bridge, self).__init__(InternalMessage("init", name))
+        super(Bridge, self).__init__()
         self.name = name
 
     @property
@@ -35,23 +34,15 @@ class Bridge(BehaviorSubject[InternalMessage]):
         if not hasattr(self, method):
             return rx.never()
         messages = getattr(self, method)(msg)
-
-        if isinstance(messages, rx.Observable):
-            return messages
-        if isinstance(messages, Iterable):
-            return rx.from_iterable(messages)
-        if messages is not None:
-            return rx.of(messages)
-        return rx.never()
+        return to_observable(messages)
+        
 
     def connect(self, device: "Bridge"):
         return (
             rx.Observable(self.receive)
             if self.name == device.name
             else device.pipe(
-                ops.filter(self.external_message),
-                ops.flat_map(self.to_messages),
-                ops.map(self.send),
+                ops.filter(self.external_message), ops.flat_map(self.to_messages)
             )
         )
 
@@ -60,19 +51,11 @@ class Bridge(BehaviorSubject[InternalMessage]):
         logging.info("[ALL] Shutting down")
         self.on_completed()
 
-    def debug(self, msg):
-        if msg is not None:
-            debug_infos = [self.name, msg.type.capitalize(), msg.dict()]
-            logging.debug("%s %s message IN: %s", *debug_infos)
-
     def receive(self, _, __):
         return SingleAssignmentDisposable()
 
-    def send(self, msg):
-        if isinstance(msg, InternalMessage):
-            self.on_next(msg)
-            debug_infos = [self.name, msg.type.capitalize(), msg.dict()]
-            logging.debug("%s %s message THRU: %s", *debug_infos)
+    def send(self, _):
+        return
 
     @property
     def init_actions(self):

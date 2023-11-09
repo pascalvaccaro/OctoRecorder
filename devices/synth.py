@@ -1,7 +1,7 @@
-from .instruments import Instruments
-
+from typing import Union
 from midi import MidiDevice, SysexCmd, SysexReq, InternalMessage as Msg
-from utils import clip, scroll, split_hex
+from utils import clip, scroll, split_hex, to_observable
+from instruments import Instruments
 
 
 class SY1000(MidiDevice):
@@ -23,7 +23,7 @@ class SY1000(MidiDevice):
 
     @property
     def external_message(self):
-        controls = ["patch", "strings", "control", "steps", "seq", "xfader", "bars"]
+        controls = ["patch", "strings", "synth_param", "steps", "seq", "xfader", "bars"]
         return lambda msg: self.select_message(msg) or msg.type in controls
 
     @property
@@ -39,14 +39,12 @@ class SY1000(MidiDevice):
         method_name = "_" + msg.type + "_in"
         if hasattr(self, method_name):
             return super().to_messages(msg)
-
-        for instr in self.instruments:
-            if not hasattr(instr, method_name):
-                continue
-            instr_idx = 0 if isinstance(msg, Msg) else 10
-            src_instr = self.instruments.get(msg.data[instr_idx])
-            if src_instr is not None:
-                yield from getattr(instr, method_name)(msg)
+        messages = None
+        instr_idx = 0 if isinstance(msg, Msg) else 9
+        src_instr = self.instruments.get(msg.data[instr_idx])
+        if src_instr is not None:
+            messages = getattr(src_instr, method_name)(msg)
+        return to_observable(messages)
 
     def _program_change_in(self, _=None):
         # patch number
@@ -66,10 +64,10 @@ class SY1000(MidiDevice):
         data = [*split_hex(left), *split_hex(right)] * 2
         yield SysexCmd("inout", [0, 44, *data])
 
-    def _sysex_in(self, msg: SysexCmd):
+    def _sysex_in(self, msg: Union[SysexCmd, Msg]):
         if msg.data[0] != 65 or msg.data[6] != 18:
             yield
-        data = msg.data[7:]
+        data = list(msg.data[7:])
         if data[1] == 1:  # "common" message
             self.patch = int("0x" + "".join(map(lambda a: hex(a)[2:], data[4:-1])), 16)
             yield from self.get_strings

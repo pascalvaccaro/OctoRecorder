@@ -1,5 +1,7 @@
 import time
 import logging
+import reactivex as rx
+from typing import Iterable
 
 
 def minmax(n: float, smallest=0, largest=1):
@@ -25,6 +27,7 @@ def scroll(n: int, smallest=0, largest=127):
 
 def t2i(values):
     return values[0] if isinstance(values, tuple) else values
+
 
 def split_hex(val: int):
     return [int(h, 16) for h in hex(val)[2:]]
@@ -57,3 +60,13 @@ def retry(action, args, timeout=3):
         logging.warn(e)
         time.sleep(timeout)
         return retry(action, args, timeout)
+
+
+def to_observable(messages):
+    if isinstance(messages, rx.Observable):
+        return messages
+    if isinstance(messages, Iterable):
+        return rx.from_iterable(messages)
+    if messages is not None:
+        return rx.of(messages)
+    return rx.never()
