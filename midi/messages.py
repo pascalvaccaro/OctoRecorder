@@ -86,7 +86,7 @@ class MidiNote(MidiMessage):
             "note_" + state,
             channel=channel,
             note=note,
-            velocity=value,
+            velocity=127 * value if isinstance(value, bool) else value,
         )
 
 
@@ -126,7 +126,7 @@ class InternalMessage(object):
 
     def bytes(self):
         return list(self.data)
-    
+
     @classmethod
     def to_internal_message(cls, msg: Optional[MidiMessage]):
         if msg is None:
@@ -134,11 +134,13 @@ class InternalMessage(object):
         if msg.type == "sysex":
             return InternalMessage(msg.type, *msg.bytes()[1:-1])
         elif msg.type == "program_change":
-            return InternalMessage(msg.type, msg.channel, msg.program) # type: ignore
+            return InternalMessage(msg.type, msg.channel, msg.program)  # type: ignore
         elif msg.type == "stop":
             return InternalMessage(msg.type)
 
+
 T = TypeVar("T", MidiMessage, MidiNote, MidiCC, Sysex)
+
 
 class QMidiMessage(List[T]):
     def __init__(self, iterable=None):

@@ -7,7 +7,6 @@ from instruments import Instruments
 class SY1000(MidiDevice):
     instruments = Instruments(21, 32, 43)
     patch = 0
-    bars = 2
 
     @property
     def init_actions(self):
@@ -23,7 +22,7 @@ class SY1000(MidiDevice):
 
     @property
     def external_message(self):
-        controls = ["patch", "strings", "synth_param", "steps", "seq", "xfader", "bars"]
+        controls = ["patch", "strings", "synth", "steps", "seq", "xfader", "bars"]
         return lambda msg: self.select_message(msg) or msg.type in controls
 
     @property
@@ -74,17 +73,14 @@ class SY1000(MidiDevice):
             instr = data[2]
             if data[3] == 1:  # inst type
                 self.instruments.set(instr, data[4])
-                yield from self.instruments.get(instr).request(self.bars)
+                yield from self.instruments.get(instr).request
             elif data[3] == 6:  # inst string vol, pan
                 yield Msg("strings", instr, data[4:-1])
             elif instr in range(21, 55):  # inst synth params
-                yield from self.instruments.get(instr).update(data[3], data[4:-1])
+                yield from self.instruments.get(instr).receive(data[3], data[4:-1])
 
     def _strings_in(self, msg: Msg):
         if msg.data[0] in [6, 7]:
             return
         for instr in self.instruments.select_by_control(msg.data[1]):
             yield from instr._strings_in(msg)
-
-    def _bars_in(self, msg: Msg):
-        self.bars = clip(msg.data[0], 1, 8)

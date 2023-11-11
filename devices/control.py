@@ -33,15 +33,7 @@ class APC40(MidiDevice):
 
     @property
     def external_message(self):
-        controls = [
-            "beat",
-            "start",
-            "strings",
-            "synth_param",
-            "pitch",
-            "cutoff",
-            "level",
-        ]
+        controls = ["beat", "start", "strings", "synth", "sequence"]
         return lambda msg: msg.type in controls
 
     def _control_change_in(self, msg: MidiCC):
@@ -67,9 +59,10 @@ class APC40(MidiDevice):
                     if ctl != control or ch != channel:
                         yield MidiCC(ch, ctl, value)
         elif control in range(48, 56):
-            layer = self.layers.current.update_controls(control - 48, value)
-            msg_type = "xfade" if layer._idx < 21 else "synth_param"
-            yield Msg(msg_type, layer._idx, control - 48, value)
+            self.layers.current.update_controls(control - 48, value)
+            idx = self.layers.current._idx
+            msg_type = "xfade" if idx < 21 else "synth"
+            yield Msg(msg_type, idx, control - 48, value)
         elif control == 64:
             yield Msg("toggle", None)
         elif control == 67:
@@ -84,9 +77,8 @@ class APC40(MidiDevice):
             self.layers.toggle(note)
             yield Msg("overdub", note in self.layers.toggles)
         elif note in range(81, 87):  # target sequencer
-            param = 0 if note in [82, 83] else 1 if note in [84, 85] else 2
-            self.layers.current.update_targets(note, 8)
             self.layers.toggle(note)
+            param = 0 if note in [82, 83] else 1 if note in [84, 85] else 2
             value = ((note + 1) % 2 or 2) if note in self.layers.toggles else 0
             yield Msg("seq", self.layers.current._idx, param, value)
         elif note in range(87, 91):  # select instr
@@ -128,7 +120,7 @@ class APC40(MidiDevice):
             if self.layers.current.has_step(note, msg.channel):
                 yield MidiNote(msg.channel, note)
         elif note == 64:
-            yield MidiNote(msg.channel, note, 127 * (note in self.layers.toggles))
+            yield MidiNote(msg.channel, note, note in self.layers.toggles)
         elif note in range(81, 87):
             yield from self.layers.toggle_targets(note)
         yield from self._note_in(msg)
@@ -166,55 +158,35 @@ class APC40(MidiDevice):
         self.blinks.discard(65)
         return res
 
-    def _synth_param_in(self, msg: Msg):
-        instr, idx, value = msg.data
-        if instr in self.layers.get(instr).update_controls(idx, value).ridx:
-            yield MidiCC(0, idx + 48, value)
+    def _synth_in(self, msg: Msg):
+        idx, control, value = msg.data
+        self.layers.get(idx).update_controls(control, value)
+        if self.layers.is_current(idx):
+            yield MidiCC(0, control + 48, value)
 
-    def _pitch_in(self, msg: Msg):
-        instr, seq, steps = msg.data
+    def _sequence_in(self, msg: Msg):
+        idx, target, seq, steps = msg.data
+        layer = self.layers.get(idx)
+        is_current = layer._idx in self.layers.current.ridx
+        # steps
+        step_rows = [53 + 2 * target, 54 + 2 * target]
+        targets = [82 + 2 * target, 83 + 2 * target]
+        if target == 2:  # last row
+            step_rows[1] -= 6
+            targets[1] -= 6
         for i, step in enumerate(steps):
-            channel = divmod(i, 8)[1]
-            note = 53 if i < 8 else 54
-            if instr in self.layers.get(instr).update_steps(note, channel, step).ridx:
-                vel = 0 if step - 32 <= 0 else 127
-                yield MidiNote(channel, note, vel)
-        yield from self._seq_in(seq, instr, 82, 83)
-
-    def _cutoff_in(self, msg: Msg):
-        instr, seq, steps = msg.data
-        for i, step in enumerate(steps):
-            channel = divmod(i, 8)[1]
-            note = 55 if i < 8 else 56
-            if instr in self.layers.get(instr).update_steps(note, channel, step).ridx:
-                vel = 0 if step <= 30 else 127
-                yield MidiNote(channel, note, vel)
-        yield from self._seq_in(seq, instr, 84, 85)
-
-    def _level_in(self, msg: Msg):
-        instr, seq, steps = msg.data
-        for i, step in enumerate(steps):
-            channel = divmod(i, 8)[1]
-            note = 57 if i < 8 else 52
-            if instr in self.layers.get(instr).update_steps(note, channel, step).ridx:
-                vel = 0 if step <= 20 else 127
-                yield MidiNote(channel, note, vel)
-        yield from self._seq_in(seq, instr, 86, 81)
-
-    def _seq_in(self, seq, idx, one, two):
-        instr = self.layers.get(idx)
-        instr.update_targets(one, seq == 1)
-        if idx in instr.update_targets(two, seq == 2).ridx:
-            if seq == 1:
-                self.layers.toggle(one)
-                self.layers.toggles.discard(two)
-                yield MidiNote(0, one, 127)
-            elif seq == 2:
-                self.layers.toggle(two)
-                self.layers.toggles.discard(one)
-                yield MidiNote(0, two, 127)
-            else:
-                self.layers.toggles.discard(one)
-                self.layers.toggles.discard(two)
-                yield MidiNote(0, one, 0)
-                yield MidiNote(0, two, 0)
+            row, channel = divmod(i, 8)
+            note = step_rows[row]
+            layer.update_steps(note, channel, step)
+            if is_current:
+                yield MidiNote(channel, note, step > 64)
+        # sequencers
+        for i, note in enumerate(targets, 1):
+            is_selected = seq == i
+            layer.update_targets(note, is_selected)
+            if is_current:
+                if is_selected:
+                    self.layers.toggle(note)
+                else:
+                    self.layers.toggles.discard(note)
+                yield MidiNote(0, note, is_selected)
