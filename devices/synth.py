@@ -22,7 +22,16 @@ class SY1000(MidiDevice):
 
     @property
     def external_message(self):
-        controls = ["patch", "strings", "synth", "steps", "seq", "xfader", "bars"]
+        controls = [
+            "bars",
+            "patch",
+            "strings",
+            "synth",
+            "steps",
+            "target",
+            "length",
+            "xfader",
+        ]
         return lambda msg: self.select_message(msg) or msg.type in controls
 
     @property

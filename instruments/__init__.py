@@ -22,12 +22,7 @@ class Instrument:
     def request(self):
         for param in self.params:
             for request in param.request:
-                idx = self.idx
-                if request[0] > 127:  # address must be below 127
-                    offset, value = divmod(request[0], 128)
-                    idx += offset
-                    request[0] = value
-                yield SysexReq("patch", [idx, *param.request])
+                yield SysexReq("patch", [self.idx, *request])
 
     def receive(self, address: int, data: "list[int]"):
         """Called with the SY100 answer to a synth params request for this instrument"""

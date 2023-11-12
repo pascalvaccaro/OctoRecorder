@@ -28,11 +28,11 @@ class Param:
     def to_vel(self, value):
         return clip((value - self.min_value) * 128 / self.max_value)
 
-    def send(self, values: "list[int]"):
+    def send(self, values):
         return [self.address, *values]
 
-    def receive(self, data: "list[int]"):
-        yield [self.macro, self.to_vel(data[self.offset * -(self.offset < 0)])]
+    def receive(self, data):
+        yield [self.macro, self.to_vel(data[abs(min(0, self.offset))])]
 
 
 class Switch(Param):
@@ -92,10 +92,6 @@ class LFO(Param):
 class StepSequencer(Param):
     seq_rates = [115, 112, 110, 109, 108, 107, 106, 106]
     min_values = [[0] * 32] * 3
-    sequencers = [
-        Param((160, 3)),
-        Param((182, 3)),
-    ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -104,36 +100,51 @@ class StepSequencer(Param):
             Param((self.address + 35, 32)),  # cutoff
             Param((self.address + 67, 32)),  # level
         ]
+        self.sequencers = [
+            Param((self.address + 99, 4), None, (0, 118)),
+            Param((self.address + 121, 4), None, (0, 118)),
+        ]
 
-    @property
-    def request(self):
-        yield from super().request
-        yield from self.set_bars()
-
-    def receive(self, data: "list[int]"):
-        targets, steps = data[0:3], data[3:]
-        for i, target in enumerate(self.targets):
-            seq_steps = enumerate(steps[i * target.offset : (i + 1) * target.offset])
+    def _steps_out(self, data: "list[int]"):
+        targets, all_steps = data[0:3], data[3:99]
+        for t_idx, target in enumerate(self.targets):
+            steps = all_steps[t_idx * target.offset : (t_idx + 1) * target.offset]
             max_values = []
-            for j, s in seq_steps:
-                if j % 2 == 1:
-                    max_values += [target.to_vel(s)]
+            for s, val in enumerate(steps):
+                if s % 2 == 1:
+                    max_values += [target.to_vel(val)]
                 else:
-                    self.min_values[i][j] = s
-            yield [i, targets[i], max_values]
+                    self.min_values[t_idx][s] = val
+            yield [t_idx, targets[t_idx], max_values]
+
+    def _length_out(self, data: "list[int]"):
+        seq_data = data[99:]
+        status = max(seq_data[0], seq_data[22])
+        length = max(seq_data[2], seq_data[24])
+        yield [status, length]
 
     def get_steps(self, data):
         idx, *steps = list(data)
         all_values = []
         target = self.targets[int(idx)]
-        for i, step in enumerate(steps):
-            all_values += [self.min_values[idx][i], target.from_vel(step)]
+        for i, val in enumerate(steps):
+            all_values += [self.min_values[idx][i], target.from_vel(val)]
         return [target.address, *all_values]
 
-    def get_seq(self, data):
-        return [self.address + data[0], data[1]]
+    def get_target(self, data):
+        target_idx, value = data
+        target = self.targets[int(target_idx)]
+        return [target.address, value]
 
-    def set_bars(self, bars=2):
+    def to_bars(self, bars=2):
         rate = self.seq_rates[clip(bars, 1, 8) - 1]
         for seq in self.sequencers:
-            yield [seq.address, 16, rate]
+            yield [seq.address + 3, rate]
+
+    def to_status(self, data):
+        for seq in self.sequencers:
+            yield [seq.address, data[0]]
+
+    def to_length(self, data):
+        for seq in self.sequencers:
+            yield [seq.address + 2, data[0]]

@@ -1,4 +1,4 @@
-from midi.messages import SysexCmd, InternalMessage
+from midi.messages import SysexCmd, SysexReq, InternalMessage
 from . import Instrument
 from .params import Param, Filter, LFO, StepSequencer
 
@@ -14,7 +14,7 @@ class DynaSynth(Instrument):
         LFO((39, 3), 3, (100, 118)),  # lfo 1 rate
         LFO((49, 3), 7, (100, 118)),  # lfo 2 rate
     ]
-    sequencer = StepSequencer((59, 99))
+    sequencer = StepSequencer((59, 125))
 
     @property
     def idx(self):
@@ -22,22 +22,34 @@ class DynaSynth(Instrument):
 
     @property
     def request(self):
-        yield from self.sequencer.request
         yield from super().request
+        for values in self.sequencer.request:
+            yield SysexReq("patch", [self.idx, *values])
 
     def receive(self, address: int, data: list[int]):
         yield from super().receive(address, data)
-        if address == self.sequencer.address:
-            for values in self.sequencer.receive(data):
-                yield InternalMessage("sequence", self.idx, *values)
+        if address == self.sequencer.origin:
+            for values in self.sequencer._steps_out(data):
+                yield InternalMessage("steps", self.idx, *values)
+            for values in self.sequencer._length_out(data):
+                yield InternalMessage("length", self.idx, *values)
 
     def _bars_in(self, msg: InternalMessage):
-        yield from self.sequencer.set_bars(msg.data[0])
+        for values in self.sequencer.to_bars(msg.data[1]):
+            yield SysexCmd("patch", [self.idx, *values])
+
+    def _length_in(self, msg: InternalMessage):
+        for values in self.sequencer.to_length(msg.data[1:]):
+            yield SysexCmd("patch", [self.idx, *values])
+
+    def _status_in(self, msg: InternalMessage):
+        for values in self.sequencer.to_status(msg.data[1:]):
+            yield SysexCmd("patch", [self.idx, *values])
 
     def _steps_in(self, msg: InternalMessage):
         values = self.sequencer.get_steps(msg.data[1:])
         yield SysexCmd("patch", [self.idx, *values])
 
-    def _seq_in(self, msg: InternalMessage):
-        values = self.sequencer.get_seq(msg.data[1:])
+    def _target_in(self, msg: InternalMessage):
+        values = self.sequencer.get_target(msg.data[1:])
         yield SysexCmd("patch", [self.idx, *values])
