@@ -1,6 +1,6 @@
 import mido
 import logging
-from typing import List, Optional, TypeVar
+from typing import List, Optional, TypeVar, Union
 
 SYNTH_SYSEX_HEAD = [65, 0, 0, 0, 0, 105]
 SYNTH_SYSEX_REQ = [*SYNTH_SYSEX_HEAD, 17]
@@ -39,7 +39,7 @@ def checksum(addr, body=[]):
         return [*head, *body, 0]
 
 
-class MidiMessage(mido.messages.Message):
+class MidoMessage(mido.messages.Message):
     type: str
 
     @property
@@ -50,7 +50,7 @@ class MidiMessage(mido.messages.Message):
         return super().bytes()
 
 
-class Sysex(MidiMessage):
+class Sysex(MidoMessage):
     data: "list[int]"
 
     def __init__(self, type, addr, data, *args, **kwargs):
@@ -93,7 +93,7 @@ class SysexReq(Sysex):
         super(SysexReq, self).__init__("REQ", *args, **kwargs)
 
 
-class MidiNote(MidiMessage):
+class MidiNote(MidoMessage):
     channel: int
     note: int
     velocity: int
@@ -108,7 +108,7 @@ class MidiNote(MidiMessage):
         )
 
 
-class MidiCC(MidiMessage):
+class MidiCC(MidoMessage):
     channel: int
     control: int
     value: int
@@ -130,6 +130,31 @@ class MidiCC(MidiMessage):
         return wrapped
 
 
+class MidiMessage(MidoMessage):
+    channel: int
+    note: int
+    control: int
+    value: int
+    velocity: int
+
+    def __init__(self, channel: int, note_or_control: int, val: int):
+        if note_or_control > 127:
+            super(MidiMessage, self).__init__(
+                "control_change",
+                channel=channel,
+                control=note_or_control - 128,
+                value=val,
+            )
+        else:
+            state = "on" if val else "off"
+            super(MidiMessage, self).__init__(
+                "note_" + state,
+                channel=channel,
+                note=note_or_control,
+                velocity=127 * val if isinstance(val, bool) else val,
+            )
+
+
 class InternalMessage(object):
     def __init__(self, type: str, *args):
         super(InternalMessage, self).__init__()
@@ -146,7 +171,7 @@ class InternalMessage(object):
         return list(self.data)
 
     @classmethod
-    def to_internal_message(cls, msg: Optional[MidiMessage]):
+    def to_internal_message(cls, msg: Optional[MidoMessage]):
         if msg is None:
             return
         if msg.type == "sysex":
@@ -157,7 +182,19 @@ class InternalMessage(object):
             return InternalMessage(msg.type)
 
 
-T = TypeVar("T", MidiMessage, MidiNote, MidiCC, Sysex)
+class MacroMessage(InternalMessage):
+    def __init__(self, typ, *args: int):
+        super().__init__(typ, *args)
+        self.idx, self.macro, self.value = [int(d) for d in args[0:3]]
+
+
+class StepMessage(MacroMessage):
+    def __init__(self, *args):
+        super().__init__("steps", *args)
+        self.steps: list[list[int]] = list(args[3:])
+
+
+T = TypeVar("T", MidoMessage, MidiNote, MidiCC, Sysex)
 
 
 class QMidiMessage(List[T]):

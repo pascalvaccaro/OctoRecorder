@@ -23,14 +23,14 @@ class SY1000(MidiDevice):
     @property
     def external_message(self):
         controls = [
-            "bars",
             "patch",
+            "xfader",
             "strings",
+            "bars",
             "synth",
             "steps",
             "target",
             "length",
-            "xfader",
         ]
         return lambda msg: self.select_message(msg) or msg.type in controls
 
@@ -49,9 +49,9 @@ class SY1000(MidiDevice):
             return super().to_messages(msg)
         messages = None
         instr_idx = 0 if isinstance(msg, Msg) else 9
-        src_instr = self.instruments.get(msg.data[instr_idx])
-        if src_instr is not None:
-            messages = getattr(src_instr, method_name)(msg)
+        instr = self.instruments.get(msg.data[instr_idx])
+        if instr is not None:
+            messages = instr.send(msg)
         return to_observable(messages)
 
     def _program_change_in(self, _=None):
@@ -92,4 +92,9 @@ class SY1000(MidiDevice):
         if msg.data[0] in [6, 7]:
             return
         for instr in self.instruments.select_by_control(msg.data[1]):
-            yield from instr._strings_in(msg)
+            channel, control, velocity = msg.data
+            param = 6 if control <= 19 else 12
+            string = channel + param if channel < 6 else param
+            value = clip(velocity / 127 * 100, 0, 100)
+            values = [value] * 6 if channel == 8 else [value]
+            yield SysexCmd("patch", [instr._instr, string, *values])

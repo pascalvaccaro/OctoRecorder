@@ -16,7 +16,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-from devices import Recorder, Sequencer, APC40, SY1000
+from devices import Recorder, Metronome, APC40, SY1000
 
 if __name__ == "__main__":
     try:
@@ -25,6 +25,6 @@ if __name__ == "__main__":
         control = APC40(CONTROL_DEVICE_NAME, 8080)
         synth = SY1000(SYNTH_DEVICE_NAME, 8081)
         audio = Recorder(AUDIO_DEVICE_NAME, 16, 8)
-        Sequencer(synth).start(control, synth, audio)
+        Metronome(synth).start(control, synth, audio)
     except Exception as e:
         logging.exception(e)

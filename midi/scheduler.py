@@ -4,7 +4,7 @@ from reactivex import from_iterable
 from reactivex.abc import ObserverBase
 from reactivex.scheduler import EventLoopScheduler
 from reactivex.disposable import CompositeDisposable, MultipleAssignmentDisposable
-from midi.messages import MidiMessage, MidiNote, QMidiMessage, is_track_selection
+from midi.messages import MidoMessage, MidiNote, QMidiMessage, is_track_selection
 
 
 class MidiScheduler(EventLoopScheduler):
@@ -12,7 +12,7 @@ class MidiScheduler(EventLoopScheduler):
     _midiout = QMidiMessage()
     _flowrate = 0.005
 
-    def schedule_out(self, action, state: Optional[MidiMessage] = None):
+    def schedule_out(self, action, state: Optional[MidoMessage] = None):
         if state is None:
             return
         if isinstance(state, MidiNote) and not self._lock:
@@ -44,7 +44,7 @@ class MidiScheduler(EventLoopScheduler):
                     disp.dispose()
                     return disp
                 cdisp = CompositeDisposable(disp.disposable)
-                messages: QMidiMessage[MidiMessage] = QMidiMessage(dev.messages)
+                messages: QMidiMessage[MidoMessage] = QMidiMessage(dev.messages)
 
                 while len(messages) > 0:
                     item = messages.pop()

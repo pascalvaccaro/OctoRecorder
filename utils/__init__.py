@@ -4,11 +4,11 @@ import reactivex as rx
 from typing import Iterable
 
 
-def minmax(n: float, smallest=0, largest=1):
+def minmax(n: float, smallest=0., largest=1.):
     return max(smallest, min(n, largest))
 
 
-def clip(n: float, smallest=0, largest=127):
+def clip(n: float, smallest=0., largest=127.):
     return round(minmax(n, smallest, largest))
 
 

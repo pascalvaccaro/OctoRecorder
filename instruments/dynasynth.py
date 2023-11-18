@@ -1,55 +1,30 @@
-from midi.messages import SysexCmd, SysexReq, InternalMessage
 from . import Instrument
-from .params import Param, Filter, LFO, StepSequencer
+from .params import Pot, Bipolar, LFO
+from .sequencer import Sequencer, Grid, Bar
 
 
 class DynaSynth(Instrument):
     params = [
-        Param((5, 1), 0, (8, 56)),  # pitch
-        Param((16, 1), 4, (14, 114)),  # pitch env. depth
-        Filter((29, 6), 1),  # filter type + cutoff
-        Param((32, -3), 5),  # resonance
-        Param((33, -4), 2, (14, 144)),  # f. env. attack
-        Param((34, -5), 6, (14, 144)),  # f. env. depth
-        LFO((39, 3), 3, (100, 118)),  # lfo 1 rate
-        LFO((49, 3), 7, (100, 118)),  # lfo 2 rate
+        Pot((5, 1), 48, (8, 56)),  # pitch
+        Pot((16, 1), 52, (14, 114)),  # pitch env. depth
+        Bipolar((29, 6), 49),  # filter type + cutoff
+        Pot((32, -3), 53),  # resonance
+        Pot((33, -4), 50, (14, 114)),  # f. env. attack
+        Pot((34, -5), 54, (14, 114)),  # f. env. depth
+        LFO((39, 3), 51, (100, 118)),  # lfo 1 rate
+        LFO((49, 3), 55, (100, 118)),  # lfo 2 rate
+        Sequencer(
+            (59, 125),
+            53,
+            # pitch: +12, +5, +3, +1, 0
+            Grid((62, -3), 82, (8, 56), [96, 77, 72, 66, 64]),
+            Grid((94, -35), 83),  # cutoff
+            Grid((126, -67), 84),  # level
+            Bar((158, -99), 85, (0, 118)),  # sequencer 1
+            Bar((180, -121), 86, (0, 118)),  # sequencer 2
+        ),
     ]
-    sequencer = StepSequencer((59, 125))
 
     @property
-    def idx(self):
-        return self._idx + 1
-
-    @property
-    def request(self):
-        yield from super().request
-        for values in self.sequencer.request:
-            yield SysexReq("patch", [self.idx, *values])
-
-    def receive(self, address: int, data: list[int]):
-        yield from super().receive(address, data)
-        if address == self.sequencer.origin:
-            for values in self.sequencer._steps_out(data):
-                yield InternalMessage("steps", self.idx, *values)
-            for values in self.sequencer._length_out(data):
-                yield InternalMessage("length", self.idx, *values)
-
-    def _bars_in(self, msg: InternalMessage):
-        for values in self.sequencer.to_bars(msg.data[1]):
-            yield SysexCmd("patch", [self.idx, *values])
-
-    def _length_in(self, msg: InternalMessage):
-        for values in self.sequencer.to_length(msg.data[1:]):
-            yield SysexCmd("patch", [self.idx, *values])
-
-    def _status_in(self, msg: InternalMessage):
-        for values in self.sequencer.to_status(msg.data[1:]):
-            yield SysexCmd("patch", [self.idx, *values])
-
-    def _steps_in(self, msg: InternalMessage):
-        values = self.sequencer.get_steps(msg.data[1:])
-        yield SysexCmd("patch", [self.idx, *values])
-
-    def _target_in(self, msg: InternalMessage):
-        values = self.sequencer.get_target(msg.data[1:])
-        yield SysexCmd("patch", [self.idx, *values])
+    def instr(self):
+        return self._instr + 1

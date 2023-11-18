@@ -5,7 +5,7 @@ from midi.messages import (
     SysexReq,
     InternalMessage,
     Sysex,
-    MidiMessage,
+    MidoMessage,
 )
 from midi.device import MidiDevice
 from midi.scheduler import MidiScheduler, midi_scheduler

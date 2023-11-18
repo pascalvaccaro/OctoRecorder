@@ -9,7 +9,7 @@ from midi import InternalMessage as Msg, MidiDevice, midi_scheduler
 from utils import clip, t2i, scroll
 
 
-class Sequencer(MidiDevice):
+class Metronome(MidiDevice):
     _bars = 2
     _playing = False
     _recording = False
@@ -17,7 +17,7 @@ class Sequencer(MidiDevice):
 
     def __init__(self, device):
         super().__init__(device)
-        self.name = "[SEQ] Sequencer"
+        self.name = "[TEM] Metronome"
 
     @property
     def select_message(self):
