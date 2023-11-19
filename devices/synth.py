@@ -79,5 +79,5 @@ class SY1000(MidiDevice):
             if data[3] == 1:  # instr type
                 self.instruments.set(instr, data[4])
                 yield from self.instruments.get(instr).request
-            elif instr in range(21, 55):  # inst params
+            elif instr in range(21, 55):  # instr params
                 yield from self.instruments.get(instr).receive(data[3], data[4:-1])

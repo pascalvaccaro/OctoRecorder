@@ -5,7 +5,7 @@ import reactivex.operators as ops
 from reactivex.disposable import CompositeDisposable
 from reactivex.scheduler import EventLoopScheduler
 from bridge import Bridge
-from midi import MidiDevice, midi_scheduler
+from midi import MidiDevice
 from instruments.messages import InternalMessage as Msg
 from utils import clip, t2i, scroll
 
@@ -108,7 +108,7 @@ class Metronome(MidiDevice):
                     on_next=dev.send,
                     on_error=logging.exception,
                     on_completed=stop_event.set,
-                    scheduler=midi_scheduler,
+                    scheduler=MidiDevice.scheduler,
                 )
                 main_disp.add(disp)
             logging.info("%s syncing %i devices", self.name, len(devices))

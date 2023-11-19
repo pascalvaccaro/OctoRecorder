@@ -178,8 +178,8 @@ class StringBlock(CCBlock):
         if channel == 8:
             channels += [*range(0, 6)]
         controls = range(control - 3, control) if control in [19, 23] else [control]
-        for ch in channels: # master channel
-            for ctl in controls: # master knob [19, 23]
+        for ch in channels:  # master channel
+            for ctl in controls:  # master knob [19, 23]
                 if ctl != control and ch != channel:
                     yield MidiCC(ch, ctl, value)
 

@@ -7,7 +7,6 @@ from midi.messages import (
     MidoMessage,
 )
 from midi.device import MidiDevice
-from midi.scheduler import MidiScheduler, midi_scheduler
 import reactivex as rx
 import reactivex.operators as ops
 

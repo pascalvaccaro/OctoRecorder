@@ -1,11 +1,12 @@
 import time
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+if TYPE_CHECKING:
+    from midi.device import MidiDevice
 from reactivex import from_iterable
 from reactivex.abc import ObserverBase
 from reactivex.scheduler import EventLoopScheduler
 from reactivex.disposable import CompositeDisposable, MultipleAssignmentDisposable
 from midi.messages import MidiMessage, TrackSelection
-
 
 class MidiScheduler(EventLoopScheduler):
     _lock = False
@@ -23,7 +24,7 @@ class MidiScheduler(EventLoopScheduler):
             rate += self._flowrate - time.time() + start
         self._lock = False
 
-    def schedule_in(self, dev, proxy: ObserverBase):
+    def schedule_in(self, dev: "MidiDevice", proxy: ObserverBase):
         disp = MultipleAssignmentDisposable()
         disp.disposable = from_iterable(dev.init_actions).subscribe(
             proxy.on_next, proxy.on_error
@@ -57,5 +58,3 @@ class MidiScheduler(EventLoopScheduler):
 
         return self.schedule(action, [])
 
-
-midi_scheduler = MidiScheduler()

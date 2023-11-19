@@ -36,6 +36,7 @@ class StepMessage(MacroMessage):
         super().__init__("steps", *args)
         self.steps: list[list[int]] = list(args[3:])
 
+
 class StringMessage(MacroMessage):
     def __init__(self, *args: int):
         super().__init__("strings", *args)
