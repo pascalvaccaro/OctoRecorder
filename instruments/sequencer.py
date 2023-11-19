@@ -1,5 +1,5 @@
 from .params import Pad
-from midi.messages import InternalMessage, MacroMessage, StepMessage
+from .messages import InternalMessage, MacroMessage, StepMessage
 from utils import clip
 
 

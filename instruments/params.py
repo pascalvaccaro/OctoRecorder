@@ -1,5 +1,5 @@
+from .messages import InternalMessage, MacroMessage
 from utils import clip
-from midi.messages import InternalMessage, MacroMessage
 
 
 class Param:

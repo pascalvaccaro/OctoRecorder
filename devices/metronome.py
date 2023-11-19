@@ -5,7 +5,8 @@ import reactivex.operators as ops
 from reactivex.disposable import CompositeDisposable
 from reactivex.scheduler import EventLoopScheduler
 from bridge import Bridge
-from midi import InternalMessage as Msg, MidiDevice, midi_scheduler
+from midi import MidiDevice, midi_scheduler
+from instruments.messages import InternalMessage as Msg
 from utils import clip, t2i, scroll
 
 

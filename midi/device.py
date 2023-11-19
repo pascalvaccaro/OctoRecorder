@@ -3,9 +3,10 @@ import mido
 from reactivex.abc import ObserverBase
 
 from bridge import Bridge
-from midi.messages import MidoMessage, InternalMessage
+from midi.messages import MidoMessage
 from midi.server import MidiServer
 from midi.scheduler import MidiScheduler, midi_scheduler
+from instruments.messages import InternalMessage
 from utils import retry
 
 

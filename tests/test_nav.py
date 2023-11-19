@@ -1,5 +1,6 @@
 import unittest
 from instruments.blocks import Block, Nav, CCBlock, Stack
+from midi.messages import MidiCC, MidiNote
 
 
 class TestNavInstr(unittest.TestCase):
@@ -46,12 +47,14 @@ class TestNavInstr(unittest.TestCase):
         self.assertEqual(1, self.block.row_idx, "block page is 1")
         self.assertEqual(len(messages), 12, "there are 12 messages")
         for msg in messages[0:4]:
+            assert isinstance(msg, MidiNote), "message is note"
             self.assertIn(msg.note, range(87, 91), "note is between 87 and 90")
             if msg.note == 88:
                 self.assertEqual(msg.velocity, 127, "velocity is 127 for note 88")
             else:
                 self.assertEqual(msg.velocity, 0, "velocity is 0 for other notes")
         for msg in messages[4:12]:
+            assert isinstance(msg, MidiCC), "message is control"
             self.assertIn(msg.control, range(48, 56), "control is between 48 and 55")
             self.assertEqual(msg.value, 0, "value is 127")
 
@@ -66,21 +69,10 @@ class TestNavInstr(unittest.TestCase):
         self.assertEqual(len(messages), 8, "8 midi messages to display")
         for i, msg in enumerate(messages):
             with self.subTest("messages", i=i):
+                assert isinstance(msg, MidiCC), "message is control"
                 self.assertEqual(msg.channel, 0, "msg channel is 0")
                 self.assertEqual(msg.control, 48 + i, "msg control is %i" % (48 + i))
                 if msg.control == 50:
                     self.assertEqual(msg.value, 100, "msg value is 100")
                 else:
                     self.assertEqual(msg.value, 0, "msg value is 0")
-
-
-class TestNavTarget(unittest.TestCase):
-    def setUp(self) -> None:
-        self.block = Nav(
-            "target",
-            82,
-            3,
-            Block("step", 53, (5, 16)),
-            Nav("seq", 85, 2, Stack("length", 52, (1, 16))),
-        )
-        return super().setUp()

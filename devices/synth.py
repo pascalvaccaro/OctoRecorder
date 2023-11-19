@@ -1,7 +1,8 @@
 from typing import Union
-from midi import MidiDevice, SysexCmd, SysexReq, InternalMessage as Msg
-from utils import clip, scroll, split_hex, to_observable
+from midi import MidiDevice, SysexCmd, SysexReq
 from instruments import Instruments
+from instruments.messages import InternalMessage as Msg
+from utils import clip, scroll, split_hex, to_observable
 
 
 class SY1000(MidiDevice):

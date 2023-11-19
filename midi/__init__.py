@@ -3,7 +3,6 @@ from midi.messages import (
     MidiCC,
     SysexCmd,
     SysexReq,
-    InternalMessage,
     Sysex,
     MidoMessage,
 )

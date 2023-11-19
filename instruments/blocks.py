@@ -1,5 +1,6 @@
 from typing import Optional, Union
-from midi.messages import InternalMessage, MacroMessage, MidiMessage
+from midi.messages import MidiCC, MidiNote
+from .messages import InternalMessage, MacroMessage
 from utils import scroll, clip
 
 
@@ -44,14 +45,17 @@ class Block:
 
     @property
     def off(self):
-        for note, values in enumerate(self.values, self.macro):
-            for ch, _ in enumerate(values[self.cursor : self.cursor + self.col_size]):
-                yield MidiMessage(ch, note, 0)
+        kw = "velocity" if self.macro < 128 else "value"
+        for msg in self.current:
+            setattr(msg, kw, 0)
+            yield msg
 
     @property
     def current(self):
         """Output the block MIDI messages for the current page"""
-        for note, values in enumerate(self.values, self.macro):
+        MidiMessage = MidiNote if self.macro < 128 else MidiCC
+        macro = self.macro if self.macro < 128 else self.macro - 128
+        for note, values in enumerate(self.values, macro):
             for ch, val in enumerate(values[self.cursor : self.cursor + self.col_size]):
                 yield MidiMessage(ch, note, val)
 

@@ -1,11 +1,10 @@
-from midi.messages import (
-    MidiNote,
-    MidiCC,
+from midi import MidiDevice, make_notes
+from midi.messages import MidiNote, MidiCC
+from instruments.messages import (
     InternalMessage as Msg,
     MacroMessage,
     StepMessage,
 )
-from midi import MidiDevice, make_notes
 from instruments.blocks import Block, Nav, CCBlock, Stack, Pager
 from utils import clip
 

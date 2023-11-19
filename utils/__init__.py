@@ -33,6 +33,34 @@ def split_hex(val: int):
     return [int(h, 16) for h in hex(val)[2:]]
 
 
+
+class MaxByteException(Exception):
+    def __init__(self, index, value) -> None:
+        super().__init__("First byte MUST be below 127")
+        self.index = index
+        self.value = value
+
+
+def checksum(head, body=[]):
+    try:
+        max_i = len(body) - 1
+        for i, val in enumerate(reversed(body)):
+            if val > 127:
+                if i == max_i: # first byte/cannot set next byte!
+                    raise MaxByteException(i, val)
+                offset, new_value = divmod(val, 128)
+                body[i + 1] += offset
+                body[i] = new_value
+        result = 128 - sum(x if x is not None else 0 for x in [*head, *body]) % 128
+        return [*head, *body, 0 if result == 128 else result]
+    except Exception as e:
+        if isinstance(e, MaxByteException):
+            logging.error(e, e.index, e.value)
+        else:
+            logging.exception(e)
+        return [*head, *body, 0]
+
+
 def doubleclick(s):
     """Decorator ensures function only runs if called twice under `s` seconds."""
 

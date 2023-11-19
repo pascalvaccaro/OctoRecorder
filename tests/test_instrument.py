@@ -1,6 +1,6 @@
 import unittest
 from instruments.dynasynth import DynaSynth
-from midi.messages import MacroMessage
+from instruments.messages import MacroMessage
 
 request_values = [
     (65, 0, 0, 0, 0, 105, 17, 16, 0, 22, 5, 0, 0, 0, 1, 84),

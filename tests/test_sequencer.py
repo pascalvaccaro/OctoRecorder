@@ -1,5 +1,5 @@
 import unittest
-from midi.messages import InternalMessage, MacroMessage, StepMessage
+from instruments.messages import InternalMessage, MacroMessage, StepMessage
 from instruments.sequencer import Bar, Grid, Sequencer
 
 

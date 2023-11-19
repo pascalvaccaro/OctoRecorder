@@ -1,5 +1,6 @@
 from typing import List, Union
-from midi.messages import InternalMessage, SysexCmd, SysexReq
+from midi.messages import SysexCmd, SysexReq
+from .messages import InternalMessage
 from .params import Pot, Pad, Bipolar, LFO, Switch
 
 

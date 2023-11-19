@@ -1,6 +1,6 @@
 import unittest
 from instruments.params import Pot, Switch, LFO, Bipolar
-from midi.messages import MacroMessage
+from instruments.messages import MacroMessage
 
 
 class TestPotParam(unittest.TestCase):
