@@ -35,13 +35,13 @@ class Bar(Pad):
     def select_message(self):
         return lambda msg: msg.type in ["bars", "length"]
 
-    def from_internal(self, msg: InternalMessage):
+    def from_internal(self, idx, msg: InternalMessage):
         if msg.type == "bars":
             rate = self.values[clip(msg.data[1], 1, 8) - 1]
-            return [self.address + 3, rate]
+            return [idx, self.address + 3, rate]
         elif msg.type == "length":
             value = msg.data[2]
-            return [self.address + 2 * (value > 0), value]
+            return [idx, self.address + 2 * (value > 0), value]
 
     def to_internal(self, idx: int, data: list[int]):
         if data[0 + idx * 22] == 0:  # seq status => length = 0
@@ -71,19 +71,19 @@ class Sequencer(Pad):
         for i, seq in enumerate(self.sequencers):
             yield MacroMessage(seq.name, idx, seq.macro, seq.to_internal(i, data[99:]))
 
-    def from_internal(self, msg: MacroMessage):
+    def from_internal(self, idx, msg: MacroMessage):
         if msg.type == Sequencer.name:
             for param in self.params:
                 if param.macro == msg.value:
                     row, col, val = list(msg.data[3:])
                     address = param.address + col + 1  # +1 to update max value only
-                    return [address, param.from_vel(row, val)]
+                    return [idx, address, param.from_vel(row, val)]
         elif msg.type == Grid.name:
             for i, param in enumerate(self.params):
                 if param.macro == msg.macro:
-                    return [self.address + i, msg.value]
+                    return [idx, self.address + i, msg.value]
         elif msg.type in ["length", "bars"]:
             for target in self.sequencers:
                 if target.macro == msg.macro:
-                    return target.from_internal(msg)
+                    return target.from_internal(idx, msg)
         raise Exception("Wrong type of message %s", msg.type)

@@ -1,5 +1,6 @@
 import unittest
 from instruments.blocks import Block, CCBlock
+from midi.messages import MidiCC, MidiNote
 
 
 class TestBlock(unittest.TestCase):
@@ -23,6 +24,7 @@ class TestBlock(unittest.TestCase):
         """Set the block's value and display it"""
         self.block.set(55, 4, 127)
         for msg in self.block.current:
+            assert isinstance(msg, MidiNote), "message is note"
             if msg.channel == 4 and msg.note == 55:
                 self.assertEqual(msg.velocity, 127, "value at 55 4 is 127")
             else:
@@ -33,7 +35,8 @@ class TestBlock(unittest.TestCase):
     def test_off(self):
         """Turn off all displays"""
         self.block.current = 55, 4, 127
-        for msg in self.block.off:  # type: ignore
+        for msg in self.block.off:
+            assert isinstance(msg, MidiNote), "message is note"
             self.assertEqual(msg.velocity, 0, "off outputs 0 everywhere")
 
     def test_empty(self):
@@ -144,7 +147,8 @@ class TestCCBlock(unittest.TestCase):
     def test_current(self):
         """Displays the current page with MidiCC"""
         self.block.set(55, 4, 127)
-        for msg in self.block.current:  # type: ignore
+        for msg in self.block.current:
+            assert isinstance(msg, MidiCC), "message is CC"
             if msg.channel == 4 and msg.control == 55:
                 self.assertEqual(msg.value, 127, "value at 55 4 is 127")
             else:

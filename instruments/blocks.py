@@ -1,6 +1,6 @@
 from typing import Optional, Union
 from midi.messages import MidiCC, MidiNote
-from .messages import InternalMessage, MacroMessage
+from .messages import InternalMessage, MacroMessage, StringMessage
 from utils import scroll, clip
 
 
@@ -144,11 +144,44 @@ class CCBlock(Block):
         if len(args) < 2:
             args = args[0], 0
         control, ch = args
-        value = self.value_at(control, ch)
+        value = args[2] if len(args) > 2 else self.value_at(control, ch)
         if root_page == 0:
             yield InternalMessage("xfade", control - self.macro, value)
         else:
             yield MacroMessage("synth", root_page - 1, control, value)
+
+
+class StringBlock(CCBlock):
+    def set(self, page: int, macro: int, *args: int):
+        for channel, value in enumerate(args):
+            self.update_value(macro, channel, value)
+            if channel == page:
+                yield MidiCC(channel, macro, value)
+
+    def message(self, *args: int):
+        if len(args) < 2:
+            args = args[0], 0
+        control, channel = args
+        if channel in [6, 7]:
+            return
+        value = args[2] or self.value_at(control, channel)
+        instr_idx = 1 + control - self.macro
+        base = int(1 + control > 19) * 6
+        macro = channel + base if channel < 6 else base
+        values = [value] * (1 if channel != 8 else 6)
+        if instr_idx == 4:  # master string volume (all instrs)
+            for instr in range(1, instr_idx):
+                yield StringMessage(instr, macro, *values)
+        else:
+            yield StringMessage(instr_idx, macro, *values)
+        channels = [channel]
+        if channel == 8:
+            channels += [*range(0, 6)]
+        controls = range(control - 3, control) if control in [19, 23] else [control]
+        for ch in channels: # master channel
+            for ctl in controls: # master knob [19, 23]
+                if ctl != control and ch != channel:
+                    yield MidiCC(ch, ctl, value)
 
 
 class Pager(Block):
@@ -267,4 +300,3 @@ class Nav(Block):
             if row_idx != self.row_idx:
                 self.row_idx = clip(row_idx, 0, self.max_row_page)
                 yield from self.current
-                

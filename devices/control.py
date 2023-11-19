@@ -4,13 +4,14 @@ from instruments.messages import (
     InternalMessage as Msg,
     MacroMessage,
     StepMessage,
+    StringMessage,
 )
-from instruments.blocks import Block, Nav, CCBlock, Stack, Pager
-from utils import clip
+from instruments.blocks import Block, Nav, CCBlock, Stack, Pager, StringBlock
 
 
 class APC40(MidiDevice):
     blinks: "set[int]" = set([65])
+    strings = StringBlock("strings", 16, 4), StringBlock("strings", 20, 4)
     blocks = Nav(
         "instr",
         87,
@@ -68,24 +69,15 @@ class APC40(MidiDevice):
                 yield Msg("volume", ch, value)
         elif control == 15:
             yield Msg("xfader", value)
-        elif control in range(16, 24):
-            self.channel = channel
-            yield Msg("strings", channel, control, value)
-            channels = [channel]
-            if channel == 8:
-                channels += [*range(0, 6)]
-            controls = range(control - 3, control) if control in [19, 23] else [control]
-            for ch in channels:
-                for ctl in controls:
-                    if ctl != control or ch != channel:
-                        yield MidiCC(ch, ctl, value)
         elif control == 64:  # footswitch 1
             yield Msg("toggle", None)
         elif control == 67:  # footswitch 2
             yield Msg("stop", None)
-        elif block:
+        elif control in range(16, 24):
+            self.channel = channel
+            block = self.strings[int(control < 20)]
             block.current = control, channel, value
-            yield from block.message(control + 128)
+            yield from block.message(control + 128, channel, value)
 
     def _note_on_in(self, msg: MidiNote):
         note = msg.note
@@ -145,14 +137,6 @@ class APC40(MidiDevice):
         elif block:
             yield from block.current  # type: ignore
 
-    def _strings_in(self, msg: Msg):
-        instr, data = msg.data
-        for i, d in enumerate(data):
-            channel = divmod(i, 6)[1]
-            control = clip((instr + 155) / 11 + (4 if i >= 6 else 0))
-            value = clip(d / 100 * 127)
-            yield MidiCC(channel, control, value)
-
     def _beat_in(self, _=None):
         return make_notes(self.channel, [*self.blinks])
 
@@ -161,6 +145,10 @@ class APC40(MidiDevice):
         res = self._beat_in()
         self.blinks.discard(63)
         return res
+
+    def _strings_in(self, msg: StringMessage):
+        block = self.strings[int(msg.macro < 20)]
+        yield from block.set(self.channel, msg.macro, *msg.values)
 
     def _synth_in(self, msg: MacroMessage):
         yield from self.blocks.set(msg.idx, msg.macro, msg.value)

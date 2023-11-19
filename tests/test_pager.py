@@ -1,5 +1,6 @@
 import unittest
 from instruments.blocks import Pager, Block, Stack
+from midi.messages import MidiNote
 
 
 class TestPager(unittest.TestCase):
@@ -37,6 +38,7 @@ class TestPager(unittest.TestCase):
         """Sets a pager's child's values"""
         self.block.set(55, 2, 127)
         for msg in self.block.current:
+            assert isinstance(msg, MidiNote), "message is note"
             if msg.channel == 2 and msg.note == 55:
                 return self.assertEqual(msg.velocity, 127, "value is 127")
         self.assertTrue(False, "value not found at 55 2")

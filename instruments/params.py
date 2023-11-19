@@ -1,4 +1,5 @@
-from .messages import InternalMessage, MacroMessage
+from instruments.messages import InternalMessage
+from .messages import InternalMessage, MacroMessage, StringMessage
 from utils import clip
 
 
@@ -35,9 +36,9 @@ class Param:
     def to_vel(self, value):
         return clip((value - self.min_value) / (self.max_value - self.min_value) * 128)
 
-    def from_internal(self, msg: InternalMessage):
+    def from_internal(self, idx: int, msg: InternalMessage):
         values = [self.from_vel(d) for d in msg.data[2:]]
-        return [self.address, *values]
+        return [idx, self.address, *values]
 
     def to_internal(self, idx: int, data: "list[int]"):
         yield [idx, self.macro, self.to_vel(data[abs(min(0, self.offset))])]
@@ -63,12 +64,29 @@ class Pot(Param):
             yield MacroMessage(self.name, *values)
 
 
+class String(Pot):
+    name = "strings"
+
+    @property
+    def request(self):
+        return
+        yield
+
+    def from_internal(self, _, msg: StringMessage):
+        return [msg.idx, msg.macro, *[self.from_vel(v) for v in msg.values]]
+
+    def to_internal(self, idx: int, data: list[int]):
+        for i in range(0, 2):
+            values = [self.to_vel(d) for d in data[i * 6 : (i + 1) * 6]]
+            yield StringMessage(idx, self.macro + idx - 1, *values)
+
+
 class Switch(Pot):
-    def from_internal(self, msg: MacroMessage):
+    def from_internal(self, idx, msg: MacroMessage):
         value = self.from_vel(msg.data[2])
         if value > self.min_value:
-            return [self.address, 1, value]
-        return [self.address, 0]
+            return [idx, self.address, 1, value]
+        return [idx, self.address, 0]
 
     def to_internal(self, idx: int, data: list[int]):
         value = self.to_vel(data[1]) * (data[0] == 1)
@@ -78,11 +96,11 @@ class Switch(Pot):
 class LFO(Pot):
     shape = 0
 
-    def from_internal(self, msg: MacroMessage):
+    def from_internal(self, idx, msg: MacroMessage):
         value = self.from_vel(msg.data[2])
         if value > self.min_value:
-            return [self.address, 1, self.shape, value]
-        return [self.address, 0]
+            return [idx, self.address, 1, self.shape, value]
+        return [idx, self.address, 0]
 
     def to_internal(self, idx: int, data: list[int]):
         self.shape = data[1]
@@ -111,14 +129,14 @@ class Bipolar(Pot):
         if ftype == 1:
             return clip(value / self.max_value * 64 + 64, 64, 127)
 
-    def from_internal(self, msg: MacroMessage):
+    def from_internal(self, idx, msg: MacroMessage):
         value = self.from_vel(msg.data[2])
         values = (
             [0, 1, (self.max_value - value)]
             if value < self.max_value
             else [1, 1, value - self.max_value]
         )
-        return [self.address, *values]
+        return [idx, self.address, *values]
 
     def to_internal(self, idx: int, data: "list[int]"):
         value = self.to_vel(data[0], data[self.data_idx])

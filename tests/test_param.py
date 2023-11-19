@@ -36,7 +36,7 @@ class TestPotParam(unittest.TestCase):
     def test_from_internal(self):
         """Takes all values to send"""
         msg = MacroMessage("synth", 0, 176, 64)
-        address, *values = self.param.from_internal(msg)
+        _, address, *values = self.param.from_internal(0, msg)
         self.assertEqual(address, 8, "address is 8")
         self.assertEqual(len(values), 1, "1 value")
         self.assertEqual(values[0], 16, "value is 16")
@@ -86,10 +86,10 @@ class TestSwitchPot(unittest.TestCase):
         off_message = MacroMessage("synth", 0, 182, 0)
         message = MacroMessage("synth", 0, 182, 64)
         self.assertEqual(
-            self.param.from_internal(off_message), [13, 0], "value is 0, switch off"
+            self.param.from_internal(1, off_message), [1, 13, 0], "value is 0, switch off"
         )
         self.assertEqual(
-            self.param.from_internal(message), [13, 1, 50], "value is 50, switch on"
+            self.param.from_internal(1, message), [1, 13, 1, 50], "value is 50, switch on"
         )
 
     def test_to_internal(self):
@@ -108,10 +108,10 @@ class TestLFOPot(unittest.TestCase):
         off_message = MacroMessage("synth", 0, 179, 0)
         message = MacroMessage("synth", 0, 179, 64)
         self.assertEqual(
-            self.param.from_internal(off_message), [45, 0], "value is 0, switch off"
+            self.param.from_internal(1, off_message), [1, 45, 0], "value is 0, switch off"
         )
         self.assertEqual(
-            self.param.from_internal(message), [45, 1, 0, 109], "value is 109, switch on"
+            self.param.from_internal(0, message), [0, 45, 1, 0, 109], "value is 109, switch on"
         )
 
     def test_to_internal(self):
@@ -141,11 +141,11 @@ class TestBipolarPot(unittest.TestCase):
     def test_from_internal(self):
         lpf_message = MacroMessage("synth", 0, 177, 32)
         self.assertEqual(
-            self.param.from_internal(lpf_message), [27, 0, 1, 50], "lpf set to 50"
+            self.param.from_internal(0, lpf_message), [0, 27, 0, 1, 50], "lpf set to 50"
         )
         hpf_message = MacroMessage("synth", 0, 177, 96)
         self.assertEqual(
-            self.param.from_internal(hpf_message), [27, 1, 1, 50], "hpf set to 50"
+            self.param.from_internal(1, hpf_message), [1, 27, 1, 1, 50], "hpf set to 50"
         )
 
     def test_to_internal(self):

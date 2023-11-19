@@ -1,10 +1,12 @@
 from . import Instrument
-from .params import Pot, Bipolar, LFO
+from .params import Pot, Bipolar, LFO, String
 from .sequencer import Sequencer, Grid, Bar
 
 
 class DynaSynth(Instrument):
     params = [
+        String((6, 12), 16),
+        String((12, -6), 20),
         Pot((5, 1), 48, (8, 56)),  # pitch
         Pot((16, 1), 52, (14, 114)),  # pitch env. depth
         Bipolar((29, 6), 49),  # filter type + cutoff
