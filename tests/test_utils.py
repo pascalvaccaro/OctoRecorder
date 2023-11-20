@@ -39,3 +39,15 @@ class TestUtils(unittest.TestCase):
         "Returns a list of integers as each byte of a hex number"""
         self.assertEqual(u.split_hex(16), [1, 0], "value is [1, 0]")
         self.assertEqual(u.split_hex(130), [8, 2], "value is [8, 2]")
+
+    def test_checksum(self):
+        """Checksums a list of bytes, flattening them below 128 if necessary"""
+        self.assertEqual(u.checksum([16, 0], [22, 16, 0, 0, 0, 1]), [16, 0, 22, 16, 0, 0, 0, 1, 73], "easy checksum")
+        self.assertEqual(u.checksum([16, 0], [22, 45, 1, 0, 109]), [16, 0, 22, 45, 1, 0, 109, 63], "classic checksum")
+        self.assertEqual(u.checksum([16, 0], [22, 158, 0]), [16, 0, 23, 30, 0, 59], "hard checksum")
+        self.assertEqual(u.checksum([16, 0], [22, 160, 108]), [16, 0, 23, 32, 108, 77], "super hard checksum")
+        try:
+            value = u.checksum([216, 0], [22, 158, 0])
+            self.assertNotIsInstance(value, int, "value is never")
+        except Exception as e:
+            self.assertIsInstance(e, u.MaxByteException, "checksum is impossible")

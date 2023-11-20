@@ -1,3 +1,4 @@
+from midi.messages import SysexCmd
 from .params import Pad
 from .messages import InternalMessage, MacroMessage, StepMessage
 from utils import clip
@@ -35,18 +36,19 @@ class Bar(Pad):
     def select_message(self):
         return lambda msg: msg.type in ["bars", "length"]
 
-    def from_internal(self, idx, msg: InternalMessage):
+    def from_vel(self, idx: int):
+        for i, value in enumerate(self.values):
+            if idx == i:
+                return value
+        return self.values[0]
+
+    def from_internal(self, idx: int, msg: InternalMessage):
         if msg.type == "bars":
-            rate = self.values[clip(msg.data[1], 1, 8) - 1]
-            return [idx, self.address + 3, rate]
+            value = clip(msg.data[1], 1, len(self.values)) - 1
+            yield SysexCmd("patch", [idx, self.address + 3, self.from_vel(value)])
         elif msg.type == "length":
             value = msg.data[2]
-            return [idx, self.address + 2 * (value > 0), value]
-
-    def to_internal(self, idx: int, data: list[int]):
-        if data[0 + idx * 22] == 0:  # seq status => length = 0
-            return 0
-        return data[2 + idx * 22]  # length 1-16
+            yield SysexCmd("patch", [idx, self.address + 2 * (value > 0), value])
 
 
 class Sequencer(Pad):
@@ -69,21 +71,24 @@ class Sequencer(Pad):
             yield StepMessage(idx, self.macro, param.macro, *steps)
             yield MacroMessage(param.name, idx, param.macro, params[i])
         for i, seq in enumerate(self.sequencers):
-            yield MacroMessage(seq.name, idx, seq.macro, seq.to_internal(i, data[99:]))
+            # off=0 or length=1~16
+            value = 0 if data[99 + i * 22] == 0 else data[101 + i * 22]
+            yield MacroMessage(seq.name, idx, seq.macro, value)
 
-    def from_internal(self, idx, msg: MacroMessage):
+    def from_internal(self, idx: int, msg: MacroMessage):
         if msg.type == Sequencer.name:
             for param in self.params:
                 if param.macro == msg.value:
                     row, col, val = list(msg.data[3:])
                     address = param.address + col + 1  # +1 to update max value only
-                    return [idx, address, param.from_vel(row, val)]
+                    yield SysexCmd("patch", [idx, address, param.from_vel(row, val)])
         elif msg.type == Grid.name:
             for i, param in enumerate(self.params):
                 if param.macro == msg.macro:
-                    return [idx, self.address + i, msg.value]
+                    yield SysexCmd("patch", [idx, self.address + i, msg.value])
         elif msg.type in ["length", "bars"]:
             for target in self.sequencers:
-                if target.macro == msg.macro:
-                    return target.from_internal(idx, msg)
-        raise Exception("Wrong type of message %s", msg.type)
+                if target.macro == msg.macro or msg.type == "bars":
+                    yield from target.from_internal(idx, msg)
+        else:
+            raise Exception("Wrong type of message %s", msg.type)

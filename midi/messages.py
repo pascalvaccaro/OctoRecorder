@@ -3,11 +3,10 @@ from contextlib import contextmanager
 from utils import checksum
 
 
-CONTROL_FORBIDDEN_CC = range(16, 24)
-CONTROL_FORBIDDEN_CHECKSUM = sum(CONTROL_FORBIDDEN_CC)  # 156
-
-
 class TrackSelection(Exception):
+    CONTROL_FORBIDDEN_CC = range(16, 24)
+    CONTROL_FORBIDDEN_CHECKSUM = sum(CONTROL_FORBIDDEN_CC)  # 156
+
     def __init__(self, msg: mido.messages.Message, *args: object) -> None:
         super().__init__(*args)
         self.channel = msg.channel  # type: ignore
@@ -19,14 +18,14 @@ class TrackSelection(Exception):
         return (
             item is not None
             and item.type == "control_change"  #  type: ignore
-            and item.control in CONTROL_FORBIDDEN_CC  # type: ignore
+            and item.control in TrackSelection.CONTROL_FORBIDDEN_CC  # type: ignore
             and sum(
                 map(
                     lambda m: m.control,  # type: ignore
                     [item, *filter(lambda m: m.type == "control_change", rest)],  # type: ignore
                 )
             )
-            == CONTROL_FORBIDDEN_CHECKSUM
+            == TrackSelection.CONTROL_FORBIDDEN_CHECKSUM
         )
 
 
@@ -52,6 +51,8 @@ class MessageQueue(list[MidoMessage]):
         super().__init__()
         self.types = types
         if isinstance(iterable, list):
+            if TrackSelection.check(iterable):
+                raise TrackSelection(iterable[0])
             for el in iterable:
                 self.add(el)
 
@@ -80,7 +81,7 @@ class MessageQueue(list[MidoMessage]):
 
 
 class MidiMessage(MidoMessage):
-    _out_q: MessageQueue = MessageQueue([])
+    _out_q: MessageQueue = MessageQueue()
 
     def __init__(self, type, *args, **kwargs):
         super().__init__(type, *args, **kwargs)
@@ -88,9 +89,7 @@ class MidiMessage(MidoMessage):
 
     @classmethod
     @contextmanager
-    def from_mido(cls, messages):
-        if TrackSelection.check(messages):
-            raise TrackSelection(messages[0])
+    def from_mido(cls, messages: list[MidoMessage]):
         yield from MessageQueue(messages)
 
     @classmethod
@@ -104,7 +103,7 @@ class MidiNote(MidoMessage):
     note: int
     velocity: int
 
-    def __init__(self, channel, note, value=127):
+    def __init__(self, channel: int, note: int, value=127):
         state = "on" if value > 0 else "off"
         super(MidiNote, self).__init__(
             "note_" + state,
@@ -119,7 +118,7 @@ class MidiCC(MidiMessage):
     control: int
     value: int
 
-    def __init__(self, channel, control, value):
+    def __init__(self, channel: int, control: int, value: int):
         super().__init__(
             "control_change", channel=channel, control=control, value=value
         )
@@ -139,7 +138,7 @@ class MidiCC(MidiMessage):
 class Sysex(MidiMessage):
     data: "list[int]"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: int, **kwargs):
         super(Sysex, self).__init__("sysex", *args, **kwargs)
 
     @property
@@ -173,7 +172,7 @@ SYNTH_ADDRESSES = {"common": [0, 1], "patch": [16, 0], "inout": [0, 4]}
 
 
 class SysexCmd(Sysex):
-    def __init__(self, addr, data, *args, **kwargs):
+    def __init__(self, addr: str, data: list[int], *args, **kwargs):
         head = SYNTH_ADDRESSES[addr]
         super(SysexCmd, self).__init__(
             data=[*SYNTH_SYSEX_CMD, *checksum(head, data)], *args, **kwargs
@@ -181,7 +180,7 @@ class SysexCmd(Sysex):
 
 
 class SysexReq(Sysex):
-    def __init__(self, addr, data, *args, **kwargs):
+    def __init__(self, addr: str, data: list[int], *args, **kwargs):
         head = SYNTH_ADDRESSES[addr]
         super(SysexReq, self).__init__(
             data=[*SYNTH_SYSEX_REQ, *checksum(head, data)], *args, **kwargs

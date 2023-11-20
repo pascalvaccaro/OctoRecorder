@@ -24,7 +24,7 @@ class MidiScheduler(EventLoopScheduler):
             rate += self._flowrate - time.time() + start
         self._lock = False
 
-    def schedule_in(self, dev: "MidiDevice", proxy: ObserverBase):
+    def schedule_in(self, dev: "MidiDevice", proxy: ObserverBase[MidiMessage]):
         disp = MultipleAssignmentDisposable()
         disp.disposable = from_iterable(dev.init_actions).subscribe(
             proxy.on_next, proxy.on_error

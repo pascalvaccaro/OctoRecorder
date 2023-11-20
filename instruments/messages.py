@@ -40,4 +40,4 @@ class StepMessage(MacroMessage):
 class StringMessage(MacroMessage):
     def __init__(self, *args: int):
         super().__init__("strings", *args)
-        self.values = [int(d) for d in args[2:]]
+        self.values: list[int] = [int(d) for d in args[2:]]

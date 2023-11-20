@@ -102,7 +102,7 @@ class Block:
     def previous(self):
         return self.go_to(self.col_idx - 1)
 
-    def go_to(self, col_idx):
+    def go_to(self, col_idx: int):
         self.col_idx = scroll(col_idx, 0, self.max_col_page)
         yield from self.current
 
@@ -152,6 +152,9 @@ class CCBlock(Block):
 
 
 class StringBlock(CCBlock):
+    def __init__(self, macro: int, shape):
+        super().__init__("strings", macro, shape)
+
     def set(self, page: int, macro: int, *args: int):
         for channel, value in enumerate(args):
             self.update_value(macro, channel, value)
@@ -165,15 +168,15 @@ class StringBlock(CCBlock):
         if channel in [6, 7]:
             return
         value = args[2] or self.value_at(control, channel)
-        instr_idx = 1 + control - self.macro
+        instr = 1 + control - self.macro
         base = int(1 + control > 19) * 6
         macro = channel + base if channel < 6 else base
         values = [value] * (1 if channel != 8 else 6)
-        if instr_idx == 4:  # master string volume (all instrs)
-            for instr in range(1, instr_idx):
-                yield StringMessage(instr, macro, *values)
+        if instr == 4:  # master string volume (all instrs)
+            for idx in range(1, instr):
+                yield StringMessage(idx, macro, *values)
         else:
-            yield StringMessage(instr_idx, macro, *values)
+            yield StringMessage(instr, macro, *values)
         channels = [channel]
         if channel == 8:
             channels += [*range(0, 6)]
@@ -216,7 +219,7 @@ class Pager(Block):
             yield from block.current
 
     @current.setter
-    def current(self, note, *_):
+    def current(self, note: int, *_):
         for block in self.children:
             if note == self.next_macro:
                 for _ in block.next():

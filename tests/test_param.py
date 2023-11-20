@@ -35,11 +35,10 @@ class TestPotParam(unittest.TestCase):
 
     def test_from_internal(self):
         """Takes all values to send"""
-        msg = MacroMessage("synth", 0, 176, 64)
-        _, address, *values = self.param.from_internal(0, msg)
-        self.assertEqual(address, 8, "address is 8")
-        self.assertEqual(len(values), 1, "1 value")
-        self.assertEqual(values[0], 16, "value is 16")
+        for msg in self.param.from_internal(22, MacroMessage("synth", 0, 176, 64)):
+            self.assertEqual(msg.address, (16, 0, 22, 8), "address is 8")
+            self.assertEqual(len(msg.body), 1, "1 value")
+            self.assertEqual(msg.body[0], 16, "value is 16")
 
     def test_from_vel(self):
         """Converts values to velocity"""
@@ -85,12 +84,12 @@ class TestSwitchPot(unittest.TestCase):
     def test_from_internal(self):
         off_message = MacroMessage("synth", 0, 182, 0)
         message = MacroMessage("synth", 0, 182, 64)
-        self.assertEqual(
-            self.param.from_internal(1, off_message), [1, 13, 0], "value is 0, switch off"
-        )
-        self.assertEqual(
-            self.param.from_internal(1, message), [1, 13, 1, 50], "value is 50, switch on"
-        )
+        for msg in self.param.from_internal(22, off_message):
+            self.assertEqual(msg.address, (16, 0, 22, 13), "address is 16, 0, 22, 13")
+            self.assertEqual(msg.body[0], 0, "value is 0, switch off")
+        for msg in self.param.from_internal(33, message):
+            self.assertEqual(msg.address, (16, 0, 33, 13), "address is 16, 0, 22, 13")
+            self.assertEqual(msg.body, (1, 50), "value is 50, switch on")
 
     def test_to_internal(self):
         off_message = list(self.param.to_internal(0, [0, 50]))
@@ -107,12 +106,11 @@ class TestLFOPot(unittest.TestCase):
     def test_from_internal(self):
         off_message = MacroMessage("synth", 0, 179, 0)
         message = MacroMessage("synth", 0, 179, 64)
-        self.assertEqual(
-            self.param.from_internal(1, off_message), [1, 45, 0], "value is 0, switch off"
-        )
-        self.assertEqual(
-            self.param.from_internal(0, message), [0, 45, 1, 0, 109], "value is 109, switch on"
-        )
+        for msg in self.param.from_internal(22, off_message):
+            self.assertEqual(msg.address, (16, 0, 22, 45), "address is 16, 0, 22, 45")
+            self.assertEqual(msg.body[0], 0, "value is 0, switch off")
+        for msg in self.param.from_internal(22, message):
+            self.assertEqual(msg.body, (1, 0, 109), "value is 109, switch on")
 
     def test_to_internal(self):
         off_message = list(self.param.to_internal(0, [0, 2, 50]))
@@ -140,13 +138,12 @@ class TestBipolarPot(unittest.TestCase):
 
     def test_from_internal(self):
         lpf_message = MacroMessage("synth", 0, 177, 32)
-        self.assertEqual(
-            self.param.from_internal(0, lpf_message), [0, 27, 0, 1, 50], "lpf set to 50"
-        )
+        for msg in self.param.from_internal(22, lpf_message):
+            self.assertEqual(msg.address, (16, 0, 22, 27), "address is 16, 0, 22, 27")
+            self.assertEqual(msg.body, (0, 1, 50), "lpf set to 50")
         hpf_message = MacroMessage("synth", 0, 177, 96)
-        self.assertEqual(
-            self.param.from_internal(1, hpf_message), [1, 27, 1, 1, 50], "hpf set to 50"
-        )
+        for msg in self.param.from_internal(22, hpf_message):
+            self.assertEqual(msg.body, (1, 1, 50), "hpf set to 50")
 
     def test_to_internal(self):
         hpf_message = list(self.param.to_internal(0, [1, 0, 1, 100]))

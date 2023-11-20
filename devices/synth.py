@@ -6,7 +6,7 @@ from utils import clip, scroll, split_hex, to_observable
 
 
 class SY1000(MidiDevice):
-    instruments = Instruments(21, 32, 43)
+    instruments = Instruments(10, 21, 32, 43)
     patch = 0
 
     @property

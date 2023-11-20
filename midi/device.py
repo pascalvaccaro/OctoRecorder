@@ -1,9 +1,10 @@
 import logging
 import mido
 from reactivex.abc import ObserverBase
+from typing import Union
 
 from bridge import Bridge
-from midi.messages import MidiMessage
+from midi.messages import MidiMessage, MidoMessage
 from midi.server import MidiServer
 from midi.scheduler import MidiScheduler
 from instruments.messages import InternalMessage
@@ -13,7 +14,7 @@ from utils import retry
 class MidiDevice(Bridge):
     scheduler = MidiScheduler()
 
-    def __init__(self, port, portno=None):
+    def __init__(self, port: Union[str, "MidiDevice"], portno=None):
         self.channel = 0
         if isinstance(port, str):
             super(MidiDevice, self).__init__("[MID] " + port[0:-7])
@@ -33,7 +34,7 @@ class MidiDevice(Bridge):
         return self.inport.closed
 
     @property
-    def messages(self):
+    def messages(self) -> list[MidoMessage]:
         midi_in = [
             m for m in self.inport.iter_pending() if m.type not in ["clock", "start"]
         ]
@@ -51,7 +52,7 @@ class MidiDevice(Bridge):
         if self.outport is not None and not self.outport.closed:
             self.outport.close()
 
-    def receive(self, observer: ObserverBase, scheduler: MidiScheduler):
+    def receive(self, observer: ObserverBase[MidoMessage], scheduler: MidiScheduler):
         return scheduler.schedule_in(self, observer)
 
     def send(self, msg):

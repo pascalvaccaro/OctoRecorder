@@ -11,7 +11,7 @@ from instruments.blocks import Block, Nav, CCBlock, Stack, Pager, StringBlock
 
 class APC40(MidiDevice):
     blinks: "set[int]" = set([65])
-    strings = StringBlock("strings", 16, 4), StringBlock("strings", 20, 4)
+    strings = StringBlock(16, 4), StringBlock(20, 4)
     blocks = Nav(
         "instr",
         87,
@@ -69,13 +69,14 @@ class APC40(MidiDevice):
                 yield Msg("volume", ch, value)
         elif control == 15:
             yield Msg("xfader", value)
+        elif control in range(16, 24):
+            self.channel = channel
+            block = self.strings[int(control < 20)]
         elif control == 64:  # footswitch 1
             yield Msg("toggle", None)
         elif control == 67:  # footswitch 2
             yield Msg("stop", None)
-        elif control in range(16, 24):
-            self.channel = channel
-            block = self.strings[int(control < 20)]
+        if block is not None:
             block.current = control, channel, value
             yield from block.message(control + 128, channel, value)
 

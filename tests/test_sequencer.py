@@ -27,16 +27,15 @@ class TestBarPad(unittest.TestCase):
         bars = InternalMessage("bars", 0, 4)
         length = MacroMessage("length", 0, 86, 8)
         off = MacroMessage("length", 0, 81, 0)
-        self.assertEqual(self.pad.from_internal(0, bars), [0, 161, 109], "rate is 109")
-        self.assertEqual(self.pad.from_internal(0, length), [0, 160, 8], "length is 8")
-        self.assertEqual(self.pad.from_internal(0, off), [0, 158, 0], "state is off")
-
-    def test_to_internal(self):
-        data_99 = [1, 0, 8, *[0] * 19, 0, 0, 8]
-        self.assertEqual(self.pad.to_internal(0, data_99), 8, "length is 8")
-        self.assertEqual(
-            self.pad.to_internal(1, data_99), 0, "seq 2 is off,. length = 0"
-        )
+        for msg in self.pad.from_internal(22, bars):
+            self.assertEqual(msg.address, (16, 0, 23, 33), "address is 16, 0, 23, 33")
+            self.assertEqual(msg.body[0], 109, "rate is 109")
+        for msg in self.pad.from_internal(22, length):
+            self.assertEqual(msg.address, (16, 0, 23, 32), "address is 16, 0, 23, 32")
+            self.assertEqual(msg.body[0], 8, "length is 8")
+        for msg in self.pad.from_internal(22, off):
+            self.assertEqual(msg.address, (16, 0, 23, 30), "address is 16, 0, 23, 30")
+            self.assertEqual(msg.body[0], 0, "state is off")
 
 
 class TestSequencerPad(unittest.TestCase):
@@ -89,8 +88,8 @@ class TestSequencerPad(unittest.TestCase):
                     )
 
     def test_to_internal_target(self):
-        for msg in self.pad.to_internal(0, self.test_data):
-            self.assertEqual(msg.idx, 0, "idx is 0")
+        for msg in self.pad.to_internal(22, self.test_data):
+            self.assertEqual(msg.idx, 22, "idx is 22")
             if msg.type == "target":
                 self.assertIn(msg.macro, range(82, 85), "macro is between 82 and 85")
                 if msg.macro == 82:
@@ -111,17 +110,15 @@ class TestSequencerPad(unittest.TestCase):
                     self.assertEqual(msg.value, 0, "seq 2 length is 0")
 
     def test_from_internal(self):
-        step_message = MacroMessage("steps", 0, 55, 82, 2, 3, 127)
-        target_message = MacroMessage("target", 0, 83, 1)
-        seq_message = MacroMessage("length", 0, 85, 4)
-        self.assertEqual(
-            self.pad.from_internal(1, step_message),
-            [1, 66, 35],
-            "address is 66/value is 35 (+3st)",
-        )
-        self.assertEqual(
-            self.pad.from_internal(0, target_message), [0, 60, 1], "address is 60/value is 1"
-        )
-        self.assertEqual(
-            self.pad.from_internal(2, seq_message), [2, 160, 4], "address is 85/value is 4"
-        )
+        step_message = MacroMessage("steps", 22, 55, 82, 2, 3, 127)
+        target_message = MacroMessage("target", 22, 83, 1)
+        seq_message = MacroMessage("length", 22, 85, 4)
+        for msg in self.pad.from_internal(22, step_message):
+            self.assertEqual(msg.address, (16, 0, 22, 66), "address is 16, 0, 22, 66")
+            self.assertEqual(msg.body[0], 35, "value is 35 (+3st)")
+        for msg in self.pad.from_internal(33, target_message):
+            self.assertEqual(msg.address, (16, 0, 33, 60), "address is 16, 0, 33, 60")
+            self.assertEqual(msg.body[0], 1, "value is 1")
+        for msg in self.pad.from_internal(44, seq_message):
+            self.assertEqual(msg.address, (16, 0, 45, 32), "address is 16, 0, 44, 85")
+            self.assertEqual(msg.body[0], 4, "value is 4")

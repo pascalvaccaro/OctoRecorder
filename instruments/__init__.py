@@ -1,7 +1,7 @@
 from typing import List, Union
-from midi.messages import SysexCmd, SysexReq
-from .messages import InternalMessage, MacroMessage, StringMessage
+from midi.messages import SysexReq
 from .params import Pot, Pad, Bipolar, LFO, Switch, String
+from .sequencer import Sequencer, Grid, Bar
 
 
 class Instrument:
@@ -41,7 +41,36 @@ class Instrument:
         """Called when the APC40 sends a command to this SY1000 instrument"""
         for param in self.params:
             if param.select_message(msg):
-                yield SysexCmd("patch", param.from_internal(self.instr, msg))
+                yield from param.from_internal(self.instr, msg)
+
+
+class DynaSynth(Instrument):
+    params = [
+        String((6, 12), 16),
+        String((12, -6), 20),
+        Pot((5, 1), 48, (8, 56)),  # pitch
+        Pot((16, 1), 52, (14, 114)),  # pitch env. depth
+        Bipolar((29, 6), 49),  # filter type + cutoff
+        Pot((32, -3), 53),  # resonance
+        Pot((33, -4), 50, (14, 114)),  # f. env. attack
+        Pot((34, -5), 54, (14, 114)),  # f. env. depth
+        LFO((39, 3), 51, (100, 118)),  # lfo 1 rate
+        LFO((49, 3), 55, (100, 118)),  # lfo 2 rate
+        Sequencer(
+            (59, 125),
+            53,
+            # pitch: +12, +5, +3, +1, 0
+            Grid((62, -3), 82, (8, 56), [96, 77, 72, 66, 64]),
+            Grid((94, -35), 83),  # cutoff
+            Grid((126, -67), 84),  # level
+            Bar((158, -99), 85, (0, 118)),  # sequencer 1
+            Bar((180, -121), 86, (0, 118)),  # sequencer 2
+        ),
+    ]
+
+    @property
+    def instr(self):
+        return self._instr + 1
 
 
 class OscSynth(Instrument):
@@ -132,9 +161,6 @@ class PolyFx(Instrument):
         return self._instr + 9
 
 
-from .dynasynth import DynaSynth
-
-
 class Instruments(List[Instrument]):
     types = (DynaSynth, OscSynth, GR300, EGuitar, AGuitar, EBass, VioGuitar, PolyFx)
 
@@ -172,6 +198,6 @@ class Instruments(List[Instrument]):
         elif synth:
             self._set(0, synth)
 
-    def _set(self, i, synth):
-        self[i] = synth
+    def _set(self, idx: int, synth: Instrument):
+        self[idx] = synth
 

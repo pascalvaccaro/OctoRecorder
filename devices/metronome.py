@@ -16,7 +16,7 @@ class Metronome(MidiDevice):
     _recording = False
     _overdub = False
 
-    def __init__(self, device):
+    def __init__(self, device: MidiDevice):
         super().__init__(device)
         self.name = "[TEM] Metronome"
 
@@ -118,7 +118,7 @@ class Metronome(MidiDevice):
             logging.info("[ALL] Stopped by user")
             stop_event.set()
 
-    def _beat_in(self, beat):
+    def _beat_in(self, beat: int):
         if beat % 24 == 0:
             yield Msg("beat")
             if beat == 0:
@@ -126,7 +126,7 @@ class Metronome(MidiDevice):
         elif self.size - beat == 1:
             yield Msg("end", self.state, self.bars)
 
-    def _bars_in(self, msg):
+    def _bars_in(self, msg: Msg):
         self.bars = msg.data
 
     def _play_in(self, _):
@@ -139,7 +139,7 @@ class Metronome(MidiDevice):
         self.playing = False
         self.recording = False
 
-    def _overdub_in(self, msg):
+    def _overdub_in(self, msg: Msg):
         self.overdub = msg.data[0]
 
     def _toggle_in(self, _):

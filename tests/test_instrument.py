@@ -1,6 +1,6 @@
 import unittest
-from instruments.dynasynth import DynaSynth
-from instruments.messages import MacroMessage
+from instruments import DynaSynth
+from instruments.messages import MacroMessage, StepMessage
 
 request_values = [
     (65, 0, 0, 0, 0, 105, 17, 16, 0, 22, 5, 0, 0, 0, 1, 84),
@@ -26,8 +26,9 @@ class TestInstrument(unittest.TestCase):
     def test_request(self):
         for i, msg in enumerate(self.instr.request):
             with self.subTest(i=i):
-                self.assertEqual(len(msg.data), 16, "request has 16 bytes")
-                self.assertEqual(msg.data, request_values[i], "values are correct")
+                if msg is not None:
+                    self.assertEqual(len(msg.data), 16, "request has 16 bytes")
+                    self.assertEqual(msg.data, request_values[i], "values are correct")
 
     def test_receive(self):
         for msg in self.instr.receive(5, [32]):
@@ -58,7 +59,7 @@ class TestInstrument(unittest.TestCase):
 
     def test_send(self):
         lfo_msg = MacroMessage("synth", 1, 179, 64)
-        grid_msg = MacroMessage("steps", 1, 53, 82, 3, 12, 127)
+        grid_msg = StepMessage(1, 53, 82, 3, 12, 127)
         for msg in self.instr.send(lfo_msg):
             self.assertEqual(msg.address, (16, 0, 22, 39), "address is correct")
             self.assertEqual(msg.body, (1, 0, 109), "address is correct")
