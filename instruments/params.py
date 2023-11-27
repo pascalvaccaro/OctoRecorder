@@ -65,11 +65,6 @@ class Pot(Param):
 class String(Pot):
     name = "strings"
 
-    @property
-    def request(self):
-        return
-        yield
-
     def from_internal(self, _, msg: StringMessage):
         yield SysexCmd(
             "patch", [msg.idx, msg.macro, *[self.from_vel(v) for v in msg.values]]

@@ -28,8 +28,12 @@ class Instrument:
     @property
     def request(self):
         for param in self.params:
-            for request in [r for r in param.request if r is not None]:
-                yield SysexReq("patch", [self.instr, *request])
+            for request in param.request:
+                if param.name == "strings":
+                    yield SysexReq("patch", [self._instr, *request])
+                else:
+                    yield SysexReq("patch", [self.instr, *request])
+
 
     def receive(self, address: int, data: "list[int]"):
         """Called with the SY100 answer to an instr request"""
@@ -172,8 +176,6 @@ class Instruments(List[Instrument]):
         for instr in self:
             # instr type + volume
             yield SysexReq("patch", [instr._instr, 1, 0, 0, 0, 2])
-            # instr strings volume + pan
-            yield SysexReq("patch", [instr._instr, 6, 0, 0, 0, 12])
 
     def get(self, idx: int):
         if idx < len(self):

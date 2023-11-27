@@ -3,6 +3,7 @@ from instruments import DynaSynth
 from instruments.messages import MacroMessage, StepMessage
 
 request_values = [
+    (65, 0, 0, 0, 0, 105, 17, 16, 0, 21, 6, 0, 0, 0, 12, 73),
     (65, 0, 0, 0, 0, 105, 17, 16, 0, 22, 5, 0, 0, 0, 1, 84),
     (65, 0, 0, 0, 0, 105, 17, 16, 0, 22, 16, 0, 0, 0, 1, 73),
     (65, 0, 0, 0, 0, 105, 17, 16, 0, 22, 29, 0, 0, 0, 6, 55),
@@ -26,9 +27,8 @@ class TestInstrument(unittest.TestCase):
     def test_request(self):
         for i, msg in enumerate(self.instr.request):
             with self.subTest(i=i):
-                if msg is not None:
-                    self.assertEqual(len(msg.data), 16, "request has 16 bytes")
-                    self.assertEqual(msg.data, request_values[i], "values are correct")
+                self.assertEqual(len(msg.data), 16, "request has 16 bytes")
+                self.assertEqual(msg.data, request_values[i], "values are correct")
 
     def test_receive(self):
         for msg in self.instr.receive(5, [32]):
